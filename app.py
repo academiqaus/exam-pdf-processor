@@ -356,45 +356,37 @@ def local_css():
         }
         
         /* Typography */
-        h1, h2, h3, h4, h5, h6 {
-            font-family: 'Comfortaa', sans-serif !important;
-            font-weight: 700 !important;
-            color: var(--purple) !important;
-        }
-        
-        p, span, div {
-            font-family: 'Comfortaa', sans-serif !important;
-            color: var(--black);
+        .caption-container {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 2rem auto;
+            max-width: 800px;
+            box-shadow: 0 2px 8px rgba(118,48,155,0.1);
+            border: 2px solid var(--purple);
         }
         
         .caption {
             font-family: 'Montserrat', sans-serif !important;
             color: var(--purple) !important;
             font-size: 1.2rem;
-            margin: 2rem 0;
+            margin: 0;
             text-align: center;
             font-weight: 600;
         }
         
-        /* Buttons */
-        .stButton > button {
-            font-family: 'Comfortaa', sans-serif !important;
-            background: var(--white) !important;
-            color: var(--purple) !important;
-            border: 2px solid var(--purple) !important;
-            border-radius: 8px !important;
-            padding: 0.6rem 1.5rem !important;
-            font-weight: 600 !important;
-            transition: all 0.3s ease !important;
+        .upload-message {
+            background: var(--light-purple);
+            color: var(--purple);
+            font-size: 1rem;
+            margin: 1.5rem auto;
+            padding: 1rem 2rem;
+            text-align: center;
+            border-radius: 8px;
+            max-width: 600px;
+            border: 1px solid rgba(118,48,155,0.2);
         }
-        
-        .stButton > button:hover {
-            background: var(--light-purple) !important;
-            border-color: var(--violet) !important;
-            color: var(--violet) !important;
-            transform: translateY(-1px) !important;
-        }
-        
+
         /* Header area with logo */
         .header-container {
             display: flex;
@@ -429,18 +421,29 @@ def local_css():
             letter-spacing: -0.5px;
         }
 
+        /* Buttons */
+        .stButton > button {
+            font-family: 'Comfortaa', sans-serif !important;
+            background: var(--white) !important;
+            color: var(--purple) !important;
+            border: 2px solid var(--purple) !important;
+            border-radius: 8px !important;
+            padding: 0.6rem 1.5rem !important;
+            font-weight: 600 !important;
+            transition: all 0.3s ease !important;
+        }
+        
+        .stButton > button:hover {
+            background: var(--light-purple) !important;
+            border-color: var(--violet) !important;
+            color: var(--violet) !important;
+            transform: translateY(-1px) !important;
+        }
+        
         /* Upload area styling */
         .upload-area {
             background: transparent;
             margin: 2rem 0;
-        }
-
-        .upload-message {
-            color: var(--purple);
-            font-size: 1rem;
-            margin-top: 1.5rem;
-            padding: 1rem;
-            text-align: center;
         }
 
         /* File uploader styling */
@@ -529,7 +532,7 @@ def main():
 
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.markdown('<p class="caption">Upload Student PDF Files</p>', unsafe_allow_html=True)
+        st.markdown('<div class="caption-container"><p class="caption">Upload Student PDF Files</p></div>', unsafe_allow_html=True)
         st.markdown('<div class="upload-message">Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
 
         # File upload section
