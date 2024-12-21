@@ -120,6 +120,7 @@ def process_pdf_with_ai(pdf_path, max_retries=3):
                 response = client.chat.completions.create(
                     model=MODEL,
                     messages=messages,
+                    max_tokens=300,
                     temperature=0.0,
                 )
                 extracted_text = response.choices[0].message.content
