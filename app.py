@@ -379,22 +379,18 @@ def local_css():
         /* Buttons */
         .stButton > button {
             font-family: 'Comfortaa', sans-serif !important;
-            background: linear-gradient(135deg, var(--purple) 0%, var(--violet) 100%) !important;
+            background: var(--purple) !important;
             color: var(--white) !important;
             border: none !important;
             border-radius: 8px !important;
             padding: 0.6rem 1.5rem !important;
             font-weight: 600 !important;
             transition: all 0.3s ease !important;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.2) !important;
-            box-shadow: 0 2px 4px rgba(118,48,155,0.2) !important;
         }
         
         .stButton > button:hover {
-            background: linear-gradient(135deg, var(--violet) 0%, var(--purple) 100%) !important;
-            color: var(--white) !important;
+            background: var(--violet) !important;
             transform: translateY(-1px) !important;
-            box-shadow: 0 4px 8px rgba(118,48,155,0.3) !important;
         }
         
         /* Header area with logo */
@@ -404,7 +400,7 @@ def local_css():
             justify-content: flex-start;
             padding: 1.5rem 3rem;
             margin: -4rem -4rem 2rem -4rem;
-            background: linear-gradient(135deg, var(--purple) 0%, var(--violet) 100%);
+            background: var(--purple);
             position: relative;
             z-index: 1;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -419,41 +415,22 @@ def local_css():
             height: 40px;
             filter: brightness(0) invert(1);
             margin-right: 2rem;
-            transition: transform 0.3s ease;
-        }
-        
-        .logo:hover {
-            transform: scale(1.05);
         }
         
         .header-title {
             font-family: 'Montserrat', sans-serif !important;
-            background: linear-gradient(135deg, var(--white) 0%, var(--gold) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: var(--white) !important;
             margin: 0;
             padding: 0;
             font-size: 2rem;
             font-weight: 700;
             letter-spacing: -0.5px;
-            text-shadow: none;
         }
 
         /* Upload area styling */
         .upload-area {
-            background: rgba(255, 255, 255, 0.9);
-            border-radius: 16px;
-            padding: 2.5rem;
+            background: transparent;
             margin: 2rem 0;
-            box-shadow: 0 8px 32px rgba(118,48,155,0.1);
-            border: 2px solid rgba(118,48,155,0.1);
-            backdrop-filter: blur(8px);
-            transition: all 0.3s ease;
-        }
-
-        .upload-area:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 48px rgba(118,48,155,0.15);
         }
 
         .upload-message {
@@ -461,37 +438,20 @@ def local_css():
             font-size: 1rem;
             margin-top: 1.5rem;
             padding: 1rem;
-            background: var(--light-purple);
-            border-radius: 8px;
-            border: 1px solid rgba(118,48,155,0.2);
             text-align: center;
-            animation: fadeIn 0.5s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
         }
 
         /* File uploader styling */
         .stFileUploader > div {
             background: var(--white);
-            padding: 2.5rem;
-            border-radius: 16px;
-            border: 2px dashed var(--purple);
+            padding: 2rem;
+            border-radius: 12px;
+            border: 2px solid var(--purple);
             transition: all 0.3s ease;
         }
 
         .stFileUploader > div:hover {
             border-color: var(--violet);
-            background: var(--light-purple);
-        }
-
-        .stFileUploader > div > div {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 1rem;
         }
 
         /* Hide redundant elements */
@@ -567,7 +527,8 @@ def main():
 
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.markdown('<p class="caption">Transform Your Paper Exams into Digital Format</p>', unsafe_allow_html=True)
+        st.markdown('<h1 class="header-title">Digital Marking App</h1>', unsafe_allow_html=True)
+        st.markdown('<p class="caption">Upload Split Student PDFs</p>', unsafe_allow_html=True)
 
         # File upload section
         st.markdown('<div class="upload-area">', unsafe_allow_html=True)
@@ -579,7 +540,7 @@ def main():
         )
 
         if uploaded_files:
-            st.markdown('<div class="upload-message">✨ Files uploaded successfully! Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
+            st.markdown('<div class="upload-message">Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
             
             # Create a unique folder for this session's uploads
             session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
