@@ -333,12 +333,111 @@ def get_pdf_preview(pdf_path):
         st.error(f"Error generating preview: {str(e)}")
         return None
 
+# Add brand styling
+def local_css():
+    st.markdown("""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&display=swap');
+        
+        /* Brand Colors */
+        :root {
+            --white: #FFFFFF;
+            --purple: #76309B;
+            --violet: #AF47E8;
+            --black: #000000;
+            --gold: #C9A649;
+        }
+        
+        /* Typography */
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'Comfortaa', sans-serif !important;
+            font-weight: 700 !important;
+            color: var(--purple) !important;
+        }
+        
+        p, span, div {
+            font-family: 'Comfortaa', sans-serif !important;
+            color: var(--black);
+        }
+        
+        .caption {
+            font-style: italic;
+            color: var(--violet);
+        }
+        
+        /* Buttons */
+        .stButton > button {
+            font-family: 'Comfortaa', sans-serif !important;
+            background-color: var(--purple) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 4px !important;
+            padding: 0.5rem 1rem !important;
+        }
+        
+        .stButton > button:hover {
+            background-color: var(--violet) !important;
+        }
+        
+        /* Progress Bar */
+        .stProgress > div > div > div {
+            background-color: var(--purple) !important;
+        }
+        
+        /* Expander */
+        .streamlit-expanderHeader {
+            font-family: 'Comfortaa', sans-serif !important;
+            color: var(--violet) !important;
+        }
+        
+        /* Success/Error messages */
+        .success {
+            color: var(--purple) !important;
+        }
+        
+        .error {
+            color: #FF4B4B !important;
+        }
+        
+        /* Header area with logo */
+        .header-container {
+            display: flex;
+            align-items: center;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid var(--purple);
+        }
+        
+        .logo {
+            height: 50px;
+            margin-right: 1rem;
+        }
+        
+        .header-title {
+            color: var(--purple);
+            margin: 0;
+            padding: 0;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
 def main():
     st.set_page_config(
-        page_title="Exam PDF Processor",
+        page_title="AcademIQ Exam PDF Processor",
         layout="wide",
         initial_sidebar_state="collapsed"
     )
+    
+    # Apply brand styling
+    local_css()
+    
+    # Display logo and title in header
+    st.markdown("""
+        <div class="header-container">
+            <img src="data:image/svg+xml;base64,{}" class="logo" alt="AcademIQ Logo">
+            <h1 class="header-title">Exam PDF Processor</h1>
+        </div>
+    """.format(base64.b64encode(open('logo.svg', 'rb').read()).decode()), unsafe_allow_html=True)
     
     # Create necessary folders and clean up old files
     create_upload_folders()
@@ -367,8 +466,8 @@ def main():
     
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.write("### Step 1: Upload PDFs")
-        st.write("Upload individual student exam PDFs for processing")
+        st.markdown('<h3 class="step-title">Step 1: Upload PDFs</h3>', unsafe_allow_html=True)
+        st.markdown('<p class="caption">Upload individual student exam PDFs for processing</p>', unsafe_allow_html=True)
 
         # File upload section
         uploaded_files = st.file_uploader(
@@ -383,8 +482,13 @@ def main():
             session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
             os.makedirs(session_folder, exist_ok=True)
 
+            # Create progress bar for overall upload progress
+            total_files = len(uploaded_files)
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
             # Process each uploaded file
-            for uploaded_file in uploaded_files:
+            for idx, uploaded_file in enumerate(uploaded_files, 1):
                 if allowed_file(uploaded_file.name):
                     # Secure the filename
                     filename = secure_filename(uploaded_file.name)
@@ -394,11 +498,17 @@ def main():
                     if save_uploaded_file(uploaded_file, save_path):
                         if filename not in st.session_state.processed_files:
                             st.session_state.processed_files.append(filename)
-                            st.success(f"Successfully uploaded: {filename}")
+                            status_text.text(f"Uploaded: {filename}")
                     else:
                         st.error(f"Failed to save {filename}")
                 else:
                     st.error(f"Invalid file type: {uploaded_file.name}")
+                
+                # Update progress bar
+                progress = idx / total_files
+                progress_bar.progress(progress)
+                
+            status_text.text("All files uploaded successfully!")
 
             # Display uploaded files
             if st.session_state.processed_files:
@@ -422,7 +532,7 @@ def main():
 
                 # Process button
                 if st.button("Process Files", type="primary"):
-                    with st.spinner("Processing files with OpenAI..."):
+                    with st.spinner("Processing with AcademIQ..."):
                         # Use environment variable for API key
                         api_key = st.secrets["OPENAI_API_KEY"]
                         global client
@@ -452,8 +562,8 @@ def main():
 
     # Step 3: Canvas Student Matching (improved UI)
     elif st.session_state.current_step == 3:
-        st.write("### Step 3: Canvas Student Matching")
-        st.write("Match processed files with Canvas students")
+        st.markdown('<h3 class="step-title">Step 3: Canvas Student Matching</h3>', unsafe_allow_html=True)
+        st.markdown('<p class="caption">Match processed files with Canvas students</p>', unsafe_allow_html=True)
         
         # Get session folder path
         session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
@@ -534,21 +644,6 @@ def main():
                             if student.id not in matched_student_ids
                         ]
                         
-                        # Create a search box for students
-                        st.text_input(
-                            "Search students",
-                            value=st.session_state.student_search,
-                            key="student_search_input",
-                            placeholder="Type to search students..."
-                        )
-                        
-                        # Filter students based on search
-                        search_term = st.session_state.student_search.lower()
-                        filtered_students = [
-                            student for student in unmatched_students
-                            if search_term in student.name.lower()
-                        ]
-                        
                         # Display unmatched files in a grid
                         st.write("#### Unmatched Files")
                         cols_per_row = 3
@@ -568,19 +663,21 @@ def main():
                                         
                                         st.write(f"**{file_info['new_filename']}**")
                                         
-                                        # Student selection with both dropdown and search
-                                        selected_student = st.selectbox(
+                                        # Student selection with searchable dropdown
+                                        search_options = [{'id': str(s.id), 'name': s.name} for s in unmatched_students]
+                                        selected = st.selectbox(
                                             "Match with student",
-                                            options=[''] + [str(s.id) for s in filtered_students],
-                                            format_func=lambda x: "Select a student" if x == '' else next(
-                                                (s.name for s in filtered_students if str(s.id) == x),
+                                            options=[''] + [str(s.id) for s in unmatched_students],
+                                            format_func=lambda x: "Type to search students..." if x == '' else next(
+                                                (s['name'] for s in search_options if s['id'] == x),
                                                 "Unknown"
                                             ),
-                                            key=f"match_{file_info['new_filename']}"
+                                            key=f"match_{file_info['new_filename']}",
+                                            help="Start typing to search for a student"
                                         )
                                         
-                                        if selected_student:
-                                            student = next(s for s in filtered_students if str(s.id) == selected_student)
+                                        if selected:
+                                            student = next(s for s in unmatched_students if str(s.id) == selected)
                                             matches.append({
                                                 'file_info': file_info,
                                                 'canvas_student_id': student.id,
