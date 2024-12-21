@@ -368,12 +368,12 @@ def local_css():
         }
         
         .caption {
-            font-style: italic;
-            color: var(--violet);
-            font-size: 1.1rem;
-            margin-bottom: 2rem;
+            font-family: 'Montserrat', sans-serif !important;
+            color: var(--purple) !important;
+            font-size: 1.2rem;
+            margin: 2rem 0;
             text-align: center;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            font-weight: 600;
         }
         
         /* Buttons */
@@ -389,8 +389,9 @@ def local_css():
         }
         
         .stButton > button:hover {
-            background: var(--purple) !important;
-            color: var(--white) !important;
+            background: var(--light-purple) !important;
+            border-color: var(--violet) !important;
+            color: var(--violet) !important;
             transform: translateY(-1px) !important;
         }
         
@@ -528,7 +529,7 @@ def main():
 
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.markdown('<p class="caption">Upload Split Student PDFs</p>', unsafe_allow_html=True)
+        st.markdown('<p class="caption">Upload Student PDF Files</p>', unsafe_allow_html=True)
         st.markdown('<div class="upload-message">Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
 
         # File upload section
