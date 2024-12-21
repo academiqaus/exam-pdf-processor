@@ -713,15 +713,12 @@ def main():
             return
         
         # Canvas API Configuration with auto-update
-        st.markdown('<div class="url-input">', unsafe_allow_html=True)
         assignment_url = st.text_input(
             "Canvas Assignment URL",
             help="Example: https://canvas.parra.catholic.edu.au/courses/12345/assignments/67890"
         )
-        st.markdown('</div>', unsafe_allow_html=True)
         
         # Matching mode selection
-        st.markdown('<div class="matching-section">', unsafe_allow_html=True)
         st.markdown('<h4>Select Matching Method</h4>', unsafe_allow_html=True)
         matching_mode = st.radio(
             "",  # Empty label since we're using the h4 above
@@ -729,7 +726,6 @@ def main():
             format_func=lambda x: "Use both Name and NESA Number" if x == 'name_and_number' else "Use Name Only",
             help="'Use both Name and NESA Number': Attempts to match using NESA number first, then falls back to name matching if needed.\n'Use Name Only': Only uses student names for matching."
         )
-        st.markdown('</div>', unsafe_allow_html=True)
 
         if assignment_url:
             # Extract base URL and IDs from assignment URL
