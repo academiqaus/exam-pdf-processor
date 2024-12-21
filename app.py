@@ -357,13 +357,13 @@ def local_css():
         
         /* Typography */
         .caption-container {
-            background: var(--light-purple);
+            background: var(--white);
             border-radius: 12px;
             padding: 1.5rem;
             margin: 2rem auto;
             max-width: 800px;
-            box-shadow: none;
-            border: 1px solid rgba(118,48,155,0.2);
+            box-shadow: 0 2px 8px rgba(118,48,155,0.1);
+            border: 2px solid var(--purple);
         }
         
         .caption {
@@ -391,7 +391,6 @@ def local_css():
         .header-container {
             display: flex;
             align-items: center;
-            justify-content: center;
             padding: 1.5rem 3rem;
             margin: -4rem -4rem 2rem -4rem;
             background: var(--light-purple);
@@ -402,13 +401,17 @@ def local_css():
         }
         
         .logo-section {
-            display: flex;
-            align-items: center;
-            gap: 2rem;
+            position: absolute;
+            left: 3rem;
         }
         
         .logo {
             height: 40px;
+        }
+        
+        .title-section {
+            flex: 1;
+            text-align: center;
         }
         
         .header-title {
@@ -503,6 +506,8 @@ def main():
         <div class="header-container">
             <div class="logo-section">
                 <img src="data:image/svg+xml;base64,{}" class="logo" alt="AcademIQ Logo">
+            </div>
+            <div class="title-section">
                 <h1 class="header-title">Digital Marking App</h1>
             </div>
         </div>
@@ -532,8 +537,7 @@ def main():
 
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.markdown('<div class="caption-container"><p class="caption">Upload Student PDF Files</p></div>', unsafe_allow_html=True)
-        st.markdown('<div class="upload-message">Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
+        st.markdown('<div class="caption-container"><p class="caption">Upload Split Student PDF Files<br>Please wait for the "Process Files" button to appear...</p></div>', unsafe_allow_html=True)
 
         # File upload section
         st.markdown('<div class="upload-area">', unsafe_allow_html=True)
