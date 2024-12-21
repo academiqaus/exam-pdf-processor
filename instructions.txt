@@ -1,0 +1,1025 @@
+import os
+import PyPDF2
+import fitz
+import base64
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
+from werkzeug.utils import secure_filename
+from canvasapi import Canvas
+import pandas as pd
+from fuzzywuzzy import fuzz, process
+import logging
+import sys
+import ssl
+import certifi
+import csv
+from collections import Counter
+from openai import OpenAI, AuthenticationError
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import io
+import requests
+from io import StringIO
+import zipfile
+import time
+import shutil
+from auth import init_app as init_auth
+from flask_mail import Mail
+from dotenv import load_dotenv
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s: %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
+
+app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-here')
+
+# Database Configuration
+if os.getenv('RENDER'):
+    db_url = os.getenv('DATABASE_URL')
+    if db_url:
+        app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace('postgres://', 'postgresql://')
+        logger.info(f"Using PostgreSQL database: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    else:
+        logger.error("DATABASE_URL environment variable not set!")
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+    logger.info("Using SQLite database")
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Configuration
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'pdf'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+DUPLICATE_FOLDER = os.path.join(UPLOAD_FOLDER, 'duplicate_splits')
+
+# Email Configuration
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_USERNAME')
+
+# Set BASE_URL based on environment
+if os.getenv('RENDER'):
+    app.config['BASE_URL'] = 'https://digital-exam-upload.onrender.com'
+else:
+    app.config['BASE_URL'] = os.getenv('BASE_URL', 'http://127.0.0.1:5000')
+
+# Initialize extensions
+mail = Mail(app)
+
+# Initialize auth module (this must be done before any database operations)
+init_auth(app)
+
+@app.before_first_request
+def init_app():
+    logger.info("Initializing application...")
+    if not os.path.exists(UPLOAD_FOLDER):
+        os.makedirs(UPLOAD_FOLDER)
+    if not os.path.exists(DUPLICATE_FOLDER):
+        os.makedirs(DUPLICATE_FOLDER)
+    logger.info("Application initialized successfully")
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Function to encode an image as base64
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
+
+# Function to extract the top third of the first page of a PDF as a PNG
+def extract_top_third_as_png(pdf_path, zoom=2):
+    doc = fitz.open(pdf_path)
+    page = doc.load_page(0)
+    rect = page.rect
+    top_third = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1 / 3)
+    mat = fitz.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=mat, clip=top_third)
+    png_path = pdf_path.replace(".pdf", "_top_third.png")
+    pix.save(png_path)
+    return png_path
+
+# Process a single PDF with OpenAI
+def process_pdf_with_ai(pdf_path, api_key, max_retries=3):
+    try:
+        client = OpenAI(api_key=api_key)
+        png_path = extract_top_third_as_png(pdf_path, zoom=2)
+        base64_image = encode_image(png_path)
+
+        messages = [
+            {"role": "system", "content": "You are an expert exam file processor that extracts handwritten student numbers and names."},
+            {"role": "user", "content": [
+                {"type": "text", "text": "What is the student number and student name in this image? Please output as follows:\nNAME: <OUTPUT>\nNUMBER: <OUTPUT>"},
+                {"type": "image_url", "image_url": {
+                    "url": f"data:image/png;base64,{base64_image}"}
+                }
+            ]}
+        ]
+
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=MODEL,
+                    messages=messages,
+                    temperature=0.0,
+                )
+                extracted_text = response.choices[0].message.content
+
+                # Extract student info
+                student_number_match = re.search(r"NUMBER: (\d+)", extracted_text)
+                student_name_match = re.search(r"NAME: (.+)", extracted_text)
+
+                student_number = student_number_match.group(1) if student_number_match else "UnknownNumber"
+                student_name = student_name_match.group(1).strip() if student_name_match else "UnknownName"
+                sanitized_student_name = student_name.replace(" ", "_")
+
+                os.remove(png_path)  # Clean up PNG
+                return student_number, sanitized_student_name, extracted_text
+
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise e
+                continue
+
+    except Exception as e:
+        if os.path.exists(png_path):
+            os.remove(png_path)
+        raise e
+
+# ------------------------------ Helper Functions ------------------------------
+
+def log_rename(original, new, status, details, log_file_path):
+    """
+    Logs the rename action to the CSV log file.
+    """
+    with open(log_file_path, mode='a', newline='', encoding='utf-8') as log_file:
+        log_writer = csv.writer(log_file)
+        log_writer.writerow([original, new, status, details])
+
+def rearrange_name(name):
+    """
+    Rearranges name from 'Surname, FirstName' to 'FirstName Surname'
+    """
+    if ',' in name:
+        parts = name.split(',')
+        return parts[1].strip() + ' ' + parts[0].strip()
+    return name.strip()
+
+def find_best_matches(student_name, available_data, threshold=70, limit=10):
+    """
+    Finds the best fuzzy matches for a given student name.
+    Returns a list of tuples (Matched Data, similarity score), sorted by similarity descending.
+    """
+    matches = process.extract(student_name, available_data, scorer=fuzz.token_set_ratio, limit=limit)
+    valid_matches = [match for match in matches if match[1] >= threshold]
+    valid_matches.sort(key=lambda x: x[1], reverse=True)
+    return valid_matches
+
+def extract_course_assignment_ids(assignment_url):
+    """
+    Extracts course_id and assignment_id from the Canvas assignment URL.
+    """
+    parts = assignment_url.strip().split('/')
+    try:
+        course_id = parts[4]
+        assignment_id = parts[6]
+        return course_id, assignment_id
+    except IndexError:
+        logging.error("Invalid assignment URL format.")
+        return None, None
+
+def parse_filename(filename, matching_mode):
+    """
+    Parses the filename to extract NESA number and student name based on the matching mode.
+    Returns a tuple (nesa_number, student_name).
+    """
+    name_without_ext = os.path.splitext(filename)[0]
+    
+    # Convert matching_mode to string if it's not already
+    matching_mode = str(matching_mode)
+    
+    if matching_mode == 'name_and_number' or matching_mode == '1':
+        try:
+            # Attempt to split by the first underscore
+            nesa_part, name_part = name_without_ext.split('_', 1)
+            nesa_number = nesa_part.strip()
+            student_name = name_part.replace('_', ' ').strip()
+
+            # Check if NESA_NUMBER is 'UnknownNumber'
+            if nesa_number.lower() == 'unknownnumber':
+                logging.info(f"Filename '{filename}' has 'UnknownNumber'. Proceeding to name matching.")
+                nesa_number = None  # Treat as no NESA number
+
+            return nesa_number, student_name
+        except ValueError:
+            logging.warning(f"Filename format incorrect for: {filename}. Attempting name-only parsing.")
+            # If splitting fails, fallback to name-only parsing
+            student_name = re.sub(r'\d+|UnknownNumber', '', name_without_ext.replace('_', ' ')).strip()
+            return None, student_name
+    elif matching_mode == 'name_only' or matching_mode == '2':
+        # Strip any numbers or the phrase 'UnknownNumber' from the filename
+        student_name = re.sub(r'\d+|UnknownNumber', '', name_without_ext.replace('_', ' ')).strip()
+        return None, student_name
+    else:
+        logging.error(f"Invalid matching mode: {matching_mode}")
+        return None, name_without_ext.replace('_', ' ').strip()
+
+def authenticate_canvas(api_url, api_key):
+    """
+    Authenticates with the Canvas API and returns the Canvas object.
+    """
+    try:
+        canvas = Canvas(api_url, api_key)
+        logging.info("Successfully authenticated with Canvas API.")
+        return canvas
+    except Exception as e:
+        logging.error(f"Failed to authenticate with Canvas API: {e}")
+        raise e
+
+def retrieve_course(canvas, assignment_url):
+    """
+    Retrieves the course object based on the assignment URL.
+    """
+    course_id, assignment_id = extract_course_assignment_ids(assignment_url)
+    if not course_id or not assignment_id:
+        logging.error("Failed to extract course_id and assignment_id from the URL.")
+        raise ValueError("Invalid assignment URL format")
+    try:
+        course = canvas.get_course(course_id)
+        logging.info(f"Retrieved course with ID {course_id}.")
+        return course
+    except Exception as e:
+        logging.error(f"Failed to retrieve course with ID {course_id}: {e}")
+        raise e
+
+def retrieve_students(course):
+    """
+    Retrieves all student users from the course.
+    """
+    try:
+        students = list(course.get_users(enrollment_type=['student']))
+        logging.info(f"Retrieved {len(students)} students from course {course.id}.")
+        return students
+    except Exception as e:
+        logging.error(f"Failed to retrieve students for course {course.id}: {e}")
+        raise e
+
+def load_google_sheet(csv_url):
+    """
+    Loads the Google Sheet as a pandas DataFrame.
+    """
+    try:
+        # Add necessary headers and parameters for Google Sheets access
+        headers = {
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': 'text/csv'
+        }
+        
+        # Create a session to handle the request
+        session = requests.Session()
+        
+        # Make the request with proper headers
+        response = session.get(csv_url, headers=headers)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        
+        # Use StringIO to create a file-like object from the response content
+        csv_data = StringIO(response.text)
+        
+        # Read the CSV data into a DataFrame
+        df = pd.read_csv(csv_data)
+        logging.info("Successfully read data from Google Sheet.")
+        return df
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to fetch Google Sheet: {e}")
+        raise ValueError(f"Failed to access Google Sheet: {e}")
+    except pd.errors.EmptyDataError:
+        logging.error("Google Sheet appears to be empty")
+        raise ValueError("Google Sheet appears to be empty")
+    except Exception as e:
+        logging.error(f"Failed to read data from Google Sheet: {e}")
+        raise ValueError(f"Failed to process Google Sheet data: {e}")
+
+def prepare_data(df, students):
+    """
+    Prepares the data by filtering and creating necessary mappings.
+    """
+    # Strip any leading/trailing whitespace and ensure required columns are present
+    required_columns = ['NESA NUMBER', 'SIS ID', 'STUDENT NAME']
+    for column in required_columns:
+        if column in df.columns:
+            df[column] = df[column].astype(str).str.strip()
+        else:
+            logging.error(f"Missing required column: {column}")
+            raise ValueError(f"Missing required column: {column}")
+
+    # Rearrange names from 'Surname, FirstName' to 'FirstName Surname'
+    df['STUDENT NAME'] = df['STUDENT NAME'].apply(rearrange_name)
+
+    # Create dictionaries to map Canvas User ID to SIS ID and Student Name
+    canvas_to_sis = {}
+    canvas_to_name = {}
+    for student in students:
+        if student.sis_user_id:
+            canvas_to_sis[student.id] = student.sis_user_id.strip()
+            canvas_to_name[student.id] = student.name.strip()
+
+    # Filter the Google Sheet data to include only students enrolled in the course
+    sis_ids_from_canvas = set(canvas_to_sis.values())
+    filtered_df = df[df['SIS ID'].isin(sis_ids_from_canvas)]
+
+    logging.info(f"Filtered Google Sheet data to {len(filtered_df)} students enrolled in the course.")
+
+    # Create a reverse dictionary to map SIS ID to Canvas User ID
+    sis_to_canvas = {sis_id: canvas_user_id for canvas_user_id, sis_id in canvas_to_sis.items()}
+
+    # Create a dictionary to map NESA NUMBER to Canvas User ID
+    nesa_to_canvas = {
+        row['NESA NUMBER']: sis_to_canvas.get(row['SIS ID'], None)
+        for _, row in filtered_df.iterrows()
+    }
+
+    logging.info(f"Mapped {len(nesa_to_canvas)} NESA numbers to Canvas User IDs.")
+
+    return filtered_df, nesa_to_canvas, canvas_to_name, sis_to_canvas
+
+def run_matching_process(canvas, assignment_url, matching_mode, exams_folder, log_callback):
+    """
+    Modified version of the original run_matching_process function
+    that accepts a callback for logging and returns unmatched files
+    """
+    # Initialize log file
+    log_file_path = os.path.join(exams_folder, 'rename_log.csv')
+    if not os.path.exists(log_file_path):
+        with open(log_file_path, mode='w', newline='', encoding='utf-8') as log_file:
+            log_writer = csv.writer(log_file)
+            log_writer.writerow(['Original Filename', 'New Filename', 'Status', 'Details'])
+
+    try:
+        # ------------------------------ Data Retrieval and Processing ------------------------------
+        # Define the Google Sheet URL with proper format
+        sheet_url = "https://docs.google.com/spreadsheets/d/1dfM5tYHmGXg4CPaXop-vyilTgkoJPLnfqRx9WcAuVEo/edit?gid=0"
+        csv_url = sheet_url.replace("/edit?gid=", "/export?format=csv&gid=")
+        
+        try:
+            df = load_google_sheet(csv_url)
+        except ValueError as e:
+            log_callback(f"Error loading student data: {str(e)}")
+            log_callback("Proceeding with name-only matching due to data access issues.")
+            df = pd.DataFrame(columns=['NESA NUMBER', 'SIS ID', 'STUDENT NAME'])
+
+        # Retrieve the course object
+        course = retrieve_course(canvas, assignment_url)
+        students = retrieve_students(course)
+        filtered_df, nesa_to_canvas, canvas_to_name, sis_to_canvas = prepare_data(df, students)
+
+        # ------------------------------ PDF Processing ------------------------------
+        if not os.path.isdir(exams_folder):
+            raise FileNotFoundError(f"The specified exams folder does not exist: {exams_folder}")
+
+        # List all PDF files in the exams folder
+        all_pdfs = [f for f in os.listdir(exams_folder) if f.lower().endswith('.pdf')]
+        log_callback(f"Found {len(all_pdfs)} exam files ready for processing")
+
+        # Initialize tracking variables
+        processed_canvas_user_ids = set()
+        unmatched_pdfs = []
+        matched_students = set()
+
+        # Create a set of available Canvas User IDs
+        available_canvas_user_ids = set(canvas_to_name.keys())
+
+        # Track all students that should have a submission
+        all_canvas_students = {student.id: student.name for student in students}
+
+        # Process each PDF
+        for filename in all_pdfs:
+            # Skip files that are already in Canvas User ID format
+            if re.match(r'^\d+\.pdf$', filename):
+                canvas_user_id = int(filename.replace('.pdf', ''))
+                if canvas_user_id in all_canvas_students:
+                    matched_students.add(canvas_user_id)
+                    processed_canvas_user_ids.add(canvas_user_id)
+                    available_canvas_user_ids.discard(canvas_user_id)
+                    log_callback(f"File '{filename}' already in Canvas format. Skipping.")
+                continue
+
+            # Parse the filename to extract NESA number and student name
+            nesa_number, student_name = parse_filename(filename, matching_mode)
+            old_path = os.path.join(exams_folder, filename)
+            canvas_user_id = None
+
+            # Try to match by NESA number first
+            if matching_mode == '1' and nesa_number:
+                canvas_user_id = nesa_to_canvas.get(nesa_number)
+                if canvas_user_id:
+                    log_callback(f"NESA number match found for '{filename}': Canvas User ID {canvas_user_id}")
+
+            # If no match by NESA number, try name matching
+            if not canvas_user_id and student_name:
+                # Get available names based on matching mode
+                if matching_mode == '2':
+                    available_names = [canvas_to_name[uid].lower() for uid in available_canvas_user_ids]
+                else:
+                    available_names = [
+                        row['STUDENT NAME'].lower() for _, row in filtered_df.iterrows()
+                        if row['SIS ID'] in sis_to_canvas and sis_to_canvas[row['SIS ID']] in available_canvas_user_ids
+                    ]
+
+                best_matches = find_best_matches(student_name.lower(), available_names)
+                if best_matches:
+                    matched_name, score = best_matches[0]
+                    if score >= 70:  # Only accept matches with good confidence
+                        if matching_mode == '2':
+                            # Find Canvas User ID from canvas_to_name
+                            for uid, name in canvas_to_name.items():
+                                if name.lower() == matched_name.lower() and uid in available_canvas_user_ids:
+                                    canvas_user_id = uid
+                                    break
+                        else:
+                            # Find Canvas User ID through filtered_df
+                            matching_rows = filtered_df[filtered_df['STUDENT NAME'].str.lower() == matched_name.lower()]
+                            if not matching_rows.empty:
+                                sis_id = matching_rows.iloc[0]['SIS ID']
+                                canvas_user_id = sis_to_canvas.get(sis_id)
+
+            # Process the match if found
+            if canvas_user_id and canvas_user_id not in processed_canvas_user_ids:
+                new_filename = f"{canvas_user_id}.pdf"
+                new_path = os.path.join(exams_folder, new_filename)
+
+                try:
+                    if not os.path.exists(new_path):
+                        os.rename(old_path, new_path)
+                        log_rename(filename, new_filename, "Renamed", "Match found and renamed.", log_file_path)
+                        processed_canvas_user_ids.add(canvas_user_id)
+                        matched_students.add(canvas_user_id)
+                        available_canvas_user_ids.discard(canvas_user_id)
+                    else:
+                        log_callback(f"Cannot rename '{filename}' to '{new_filename}': Target file already exists.")
+                        unmatched_pdfs.append(filename)
+                except Exception as e:
+                    log_callback(f"Failed to rename {filename} to {new_filename}: {e}")
+                    unmatched_pdfs.append(filename)
+            else:
+                if filename not in unmatched_pdfs:
+                    unmatched_pdfs.append(filename)
+                    log_rename(filename, "", "Unmatched", "No match found.", log_file_path)
+
+        # Determine unmatched students
+        unmatched_students = {
+            student_id: name 
+            for student_id, name in all_canvas_students.items() 
+            if student_id not in matched_students
+        }
+
+        log_callback(f"Matching complete. {len(unmatched_pdfs)} files unmatched, {len(unmatched_students)} students unmatched.")
+        return unmatched_pdfs, unmatched_students
+
+    except Exception as e:
+        log_callback(f"Error during matching process: {str(e)}")
+        raise e
+
+# Step 1: PDF Splitting
+@app.route('/', methods=['GET'])
+def index():
+    return render_template('index.html', active_step=0, progress_percentage="0%")
+
+@app.route('/step1', methods=['GET', 'POST'])
+def step1():
+    if request.method == 'POST':
+        if 'pdf_file' not in request.files:
+            flash('No file selected', 'error')
+            return redirect(request.url)
+        
+        file = request.files['pdf_file']
+        if file.filename == '':
+            flash('No file selected', 'error')
+            return redirect(request.url)
+        
+        if file and allowed_file(file.filename):
+            # Save form data in session
+            session['total_students'] = request.form.get('total_students')
+            session['exam_pages'] = request.form.get('exam_pages')
+            session['students_with_ws'] = request.form.get('students_with_ws', '0')
+            session['pages_with_ws'] = request.form.get('pages_with_ws', '0')
+            
+            # Save the file
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            session['original_pdf'] = filepath
+            
+            # Validate page count
+            try:
+                total_students = int(session['total_students'])
+                exam_pages = int(session['exam_pages'])
+                students_with_ws = int(session['students_with_ws'])
+                pages_with_ws = int(session['pages_with_ws'])
+                
+                regular_students = total_students - students_with_ws
+                expected_pages = (regular_students * exam_pages) + (students_with_ws * pages_with_ws)
+                
+                pdf_reader = PyPDF2.PdfReader(filepath)
+                actual_pages = len(pdf_reader.pages)
+                
+                if actual_pages != expected_pages:
+                    flash(f'Page count mismatch. Expected {expected_pages}, found {actual_pages}.', 'error')
+                    return redirect(request.url)
+                
+                # If validation passes, proceed to splitting
+                split_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'splits')
+                os.makedirs(split_folder, exist_ok=True)
+                session['split_folder'] = split_folder
+                
+                # Perform splitting
+                current_page = 0
+                for i in range(regular_students):
+                    output_path = os.path.join(split_folder, f'Student_{i+1}.pdf')
+                    writer = PyPDF2.PdfWriter()
+                    for _ in range(exam_pages):
+                        writer.add_page(pdf_reader.pages[current_page])
+                        current_page += 1
+                    with open(output_path, 'wb') as output_file:
+                        writer.write(output_file)
+                
+                for i in range(students_with_ws):
+                    output_path = os.path.join(split_folder, f'Student_{regular_students+i+1}_Extra_WS.pdf')
+                    writer = PyPDF2.PdfWriter()
+                    for _ in range(pages_with_ws):
+                        writer.add_page(pdf_reader.pages[current_page])
+                        current_page += 1
+                    with open(output_path, 'wb') as output_file:
+                        writer.write(output_file)
+                
+                flash('PDF splitting completed successfully!', 'success')
+                return redirect(url_for('step1_5'))
+                
+            except Exception as e:
+                flash(f'Error processing PDF: {str(e)}', 'error')
+                return redirect(request.url)
+    
+    return render_template('step1.html', active_step=1, progress_percentage="25%")
+
+# Step 1.5: OpenAI-based PDF Renaming
+@app.route('/step1_5', methods=['GET', 'POST'])
+def step1_5():
+    if request.method == 'POST':
+        api_key = request.form.get('api_key')
+        if not api_key:
+            flash('Please enter your OpenAI API key', 'error')
+            return redirect(request.url)
+
+        split_folder = session.get('split_folder')
+        if not split_folder:
+            flash('No split PDFs found. Please complete step 1 first.', 'error')
+            return redirect(url_for('step1'))
+
+        try:
+            # Test API key
+            client = OpenAI(api_key=api_key)
+            client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role": "system", "content": "Ping"}],
+                temperature=0.0,
+            )
+
+            # Process PDFs concurrently
+            pdf_files = [f for f in os.listdir(split_folder) if f.endswith('.pdf')]
+            processed_files = []
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = []
+                for filename in pdf_files:
+                    pdf_path = os.path.join(split_folder, filename)
+                    future = executor.submit(process_pdf_with_ai, pdf_path, api_key)
+                    futures.append((future, filename, pdf_path))
+
+                for future, filename, pdf_path in futures:
+                    try:
+                        student_number, student_name, extracted_text = future.result()
+                        new_filename = f"{student_number}_{student_name}.pdf"
+                        
+                        # Handle duplicates
+                        new_path = os.path.join(split_folder, new_filename)
+                        duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
+                        
+                        count = 1
+                        while os.path.exists(new_path) or os.path.exists(duplicate_path):
+                            new_filename = f"{student_number}_{student_name}_{count}.pdf"
+                            new_path = os.path.join(split_folder, new_filename)
+                            duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
+                            count += 1
+
+                        # Rename and copy
+                        os.rename(pdf_path, new_path)
+                        os.system(f"cp '{new_path}' '{duplicate_path}'")
+                        processed_files.append((filename, new_filename, extracted_text))
+
+                    except Exception as e:
+                        flash(f'Error processing {filename}: {str(e)}')
+
+            if processed_files:
+                # Log the results
+                log_path = os.path.join(split_folder, 'rename_log.txt')
+                with open(log_path, 'w') as log_file:
+                    log_file.write("Renaming Log\n============\n")
+                    for orig, new, text in processed_files:
+                        log_file.write(f"{orig} -> {new}\n")
+                        log_file.write(f"Extracted text: {text}\n\n")
+
+                flash('PDF renaming completed successfully!', 'success')
+                return redirect(url_for('step2'))
+            else:
+                flash('No files were processed successfully.', 'warning')
+                return redirect(request.url)
+
+        except AuthenticationError:
+            flash('Invalid OpenAI API key', 'error')
+            return redirect(request.url)
+        except Exception as e:
+            flash(f'Error: {str(e)}', 'error')
+            return redirect(request.url)
+
+    return render_template('step1_5.html', active_step=2, progress_percentage="50%")
+
+# Step 2: Student Matching
+@app.route('/step2', methods=['GET', 'POST'])
+def step2():
+    if request.method == 'POST':
+        # Use hardcoded API key
+        api_key = CANVAS_API_KEY
+        assignment_url = request.form.get('assignment_url')
+        matching_mode = request.form.get('matching_mode', 'name_and_number')  # Default to name_and_number
+        
+        split_folder = session.get('split_folder')
+        if not split_folder:
+            flash('No split PDFs found. Please complete step 1 first.', 'error')
+            return redirect(url_for('step1'))
+
+        try:
+            # Initialize Canvas API
+            canvas = Canvas(CANVAS_API_URL, api_key)
+            
+            # Create timestamp for this session
+            timestamp = str(int(time.time()))
+            session['timestamp'] = timestamp
+            
+            # Create new split folder with timestamp
+            new_split_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'splits', timestamp)
+            os.makedirs(new_split_folder, exist_ok=True)
+            
+            # Copy files to new split folder
+            for filename in os.listdir(split_folder):
+                if filename.endswith('.pdf'):
+                    shutil.copy2(
+                        os.path.join(split_folder, filename),
+                        os.path.join(new_split_folder, filename)
+                    )
+            
+            # Update split folder in session
+            session['split_folder'] = new_split_folder
+            
+            # Run the matching process
+            unmatched_pdfs, unmatched_students = run_matching_process(
+                canvas=canvas,
+                assignment_url=assignment_url,
+                matching_mode=matching_mode,
+                exams_folder=new_split_folder,
+                log_callback=lambda msg: flash(msg)
+            )
+            
+            # Store only essential data in session
+            if unmatched_pdfs:
+                # Store file names and student IDs only
+                session['unmatched_pdfs'] = unmatched_pdfs
+                session['unmatched_students'] = {
+                    str(sid): name[:50]  # Limit name length
+                    for sid, name in unmatched_students.items()
+                }
+                flash(f'Found {len(unmatched_pdfs)} unmatched files. Please match them manually.', 'warning')
+                return redirect(url_for('manual_match'))
+            else:
+                session.pop('unmatched_pdfs', None)
+                session.pop('unmatched_students', None)
+                flash('All files matched successfully!', 'success')
+                return redirect(url_for('step3'))
+            
+        except Exception as e:
+            flash(f'Error: {str(e)}', 'error')
+            return redirect(request.url)
+    
+    return render_template('step2.html', active_step=3, progress_percentage="75%")
+
+# Step 3: Cover Page Removal
+@app.route('/step3', methods=['GET', 'POST'])
+def step3():
+    if 'timestamp' not in session:
+        flash('Please start from the beginning', 'error')
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        booklet_size = request.form.get('booklet_size')
+        if booklet_size == 'custom':
+            booklet_size = request.form.get('custom_booklet_size')
+        
+        if not booklet_size:
+            flash('Please select a booklet size', 'error')
+            return redirect(url_for('step3'))
+
+        try:
+            booklet_size = int(booklet_size)
+            if booklet_size < 1:
+                raise ValueError
+        except ValueError:
+            flash('Invalid booklet size', 'error')
+            return redirect(url_for('step3'))
+
+        # Process files with the selected booklet size
+        splits_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'splits', session['timestamp'])
+        preview_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'preview', session['timestamp'])
+        os.makedirs(preview_folder, exist_ok=True)
+
+        try:
+            for filename in os.listdir(splits_folder):
+                if filename.endswith('.pdf'):
+                    input_path = os.path.join(splits_folder, filename)
+                    output_path = os.path.join(preview_folder, filename)
+                    remove_cover_pages(input_path, output_path, booklet_size)
+
+            session['preview_folder'] = preview_folder
+            return redirect(url_for('preview_results'))
+
+        except Exception as e:
+            flash(f'Error processing files: {str(e)}', 'error')
+            return redirect(url_for('step3'))
+
+    return render_template('step3.html', progress_percentage="75%", timestamp=session['timestamp'], active_step=3)
+
+@app.route('/get_preview/<path:filename>')
+def get_preview(filename):
+    """Generate and serve a preview image of the requested page of a processed PDF"""
+    preview_folder = session.get('preview_folder')
+    if not preview_folder:
+        return 'No preview folder found', 400
+
+    # Get page number from query parameters, default to first page
+    try:
+        page_num = int(request.args.get('page', 1)) - 1  # Convert to 0-based index
+    except ValueError:
+        return 'Invalid page number', 400
+
+    pdf_path = os.path.join(preview_folder, filename)
+    if not os.path.exists(pdf_path):
+        return 'File not found', 404
+
+    try:
+        # Generate preview image
+        doc = fitz.open(pdf_path)
+        
+        # Check if page exists
+        if page_num < 0 or page_num >= len(doc):
+            doc.close()
+            return 'Page not found', 404
+            
+        # Get requested page
+        page = doc.load_page(page_num)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better quality
+        
+        # Convert to PNG image
+        img_data = pix.tobytes("png")
+        doc.close()
+
+        # Serve the image
+        return send_file(
+            io.BytesIO(img_data),
+            mimetype='image/png',
+            as_attachment=False
+        )
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/download_processed', methods=['POST'])
+def download_processed():
+    timestamp = request.form.get('timestamp')
+    if not timestamp:
+        flash('Invalid request: missing timestamp', 'error')
+        return redirect(url_for('index'))
+
+    # Create a zip file containing all PDFs
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # First try to get files from preview folder (processed files)
+        preview_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'preview', timestamp)
+        splits_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'splits', timestamp)
+        
+        # If preview folder exists, use processed files
+        if os.path.exists(preview_folder):
+            source_folder = preview_folder
+        # Otherwise use split files (unprocessed)
+        elif os.path.exists(splits_folder):
+            source_folder = splits_folder
+        else:
+            flash('Files not found', 'error')
+            return redirect(url_for('index'))
+
+        # Add files to zip
+        for filename in os.listdir(source_folder):
+            if filename.endswith('.pdf'):
+                file_path = os.path.join(source_folder, filename)
+                zip_file.write(file_path, filename)
+
+    zip_buffer.seek(0)
+    return send_file(
+        zip_buffer,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='exam_files.zip'
+    )
+
+@app.route('/manual_match', methods=['GET', 'POST'])
+def manual_match():
+    if 'timestamp' not in session:
+        flash('Please start from the beginning', 'error')
+        return redirect(url_for('index'))
+
+    # Get data from session
+    split_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'splits', session['timestamp'])
+    unmatched_pdfs = session.get('unmatched_pdfs', [])
+    unmatched_students = session.get('unmatched_students', {})
+
+    if not os.path.exists(split_folder):
+        flash('No split PDFs found. Please complete step 1 first.', 'error')
+        return redirect(url_for('step1'))
+
+    if not unmatched_pdfs:
+        flash('No unmatched files to process', 'warning')
+        return redirect(url_for('step2'))
+
+    if request.method == 'POST':
+        # Process manual matches
+        matches = {}
+        for pdf in unmatched_pdfs:
+            student_id = request.form.get(f'match_{pdf}')
+            if student_id:
+                matches[pdf] = student_id
+
+        # Apply matches
+        log_file_path = os.path.join(split_folder, 'rename_log.csv')
+        for pdf_name, student_id in matches.items():
+            try:
+                old_path = os.path.join(split_folder, pdf_name)
+                new_path = os.path.join(split_folder, f"{student_id}.pdf")
+                
+                # Rename the file
+                os.rename(old_path, new_path)
+                
+                # Log the manual match
+                log_rename(pdf_name, f"{student_id}.pdf", "Manual Match", 
+                          "Manually matched by user", log_file_path)
+                
+                # Update session data
+                unmatched_pdfs.remove(pdf_name)
+                if student_id in unmatched_students:
+                    del unmatched_students[student_id]
+                
+            except Exception as e:
+                flash(f'Error matching {pdf_name}: {str(e)}')
+
+        # Update session with remaining unmatched files
+        session['unmatched_pdfs'] = unmatched_pdfs
+        session['unmatched_students'] = unmatched_students
+
+        if not unmatched_pdfs:
+            flash('All files have been matched successfully!', 'success')
+            # Clear session data
+            session.pop('unmatched_pdfs', None)
+            session.pop('unmatched_students', None)
+            return redirect(url_for('step3'))
+        else:
+            flash(f'{len(matches)} files matched. {len(unmatched_pdfs)} files remaining.', 'warning')
+            return redirect(url_for('manual_match'))
+
+    return render_template('manual_match.html', 
+                         unmatched_pdfs=unmatched_pdfs,
+                         unmatched_students=unmatched_students,
+                         active_step=3,
+                         progress_percentage="75%")
+
+@app.route('/pdf_preview/<path:filename>')
+def get_pdf_preview(filename):
+    """Generate and serve a preview image of the first page of a PDF"""
+    if 'timestamp' not in session:
+        return 'Please start from the beginning', 400
+
+    split_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'splits', session['timestamp'])
+    if not os.path.exists(split_folder):
+        return 'No folder found', 400
+
+    pdf_path = os.path.join(split_folder, filename)
+    if not os.path.exists(pdf_path):
+        return 'File not found', 404
+
+    try:
+        # Generate preview image
+        doc = fitz.open(pdf_path)
+        page = doc.load_page(0)
+        rect = page.rect
+        rect.y1 = rect.y1 / 3  # Only top third
+        mat = fitz.Matrix(2, 2)  # 2x zoom for better quality
+        pix = page.get_pixmap(matrix=mat, clip=rect)
+        
+        # Convert to PNG image
+        img_data = pix.tobytes("png")
+        doc.close()
+
+        # Serve the image
+        return send_file(
+            io.BytesIO(img_data),
+            mimetype='image/png',
+            as_attachment=False
+        )
+    except Exception as e:
+        return str(e), 500
+
+def get_cover_pages_to_remove(total_pages, booklet_size):
+    """Calculate which cover pages should be removed based on booklet size and total pages"""
+    pages_to_remove = []
+    
+    # Calculate how many booklets are combined
+    num_booklets = total_pages // booklet_size
+    
+    # For each booklet, add its first page (cover page) to the removal list
+    for i in range(num_booklets):
+        cover_page = i * booklet_size  # 0-based index
+        pages_to_remove.append(cover_page)
+    
+    return sorted(pages_to_remove)
+
+def remove_cover_pages(input_path, output_path, booklet_size):
+    """Remove cover pages from a PDF based on booklet size"""
+    try:
+        # Read PDF
+        reader = PyPDF2.PdfReader(input_path)
+        writer = PyPDF2.PdfWriter()
+        
+        # Get total pages and calculate cover pages to remove
+        total_pages = len(reader.pages)
+        pages_to_remove = get_cover_pages_to_remove(total_pages, booklet_size)
+        
+        # Add all pages except cover pages
+        for i in range(total_pages):
+            if i not in pages_to_remove:
+                writer.add_page(reader.pages[i])
+        
+        # Save processed PDF
+        with open(output_path, 'wb') as output_file:
+            writer.write(output_file)
+            
+    except Exception as e:
+        raise Exception(f"Error processing {os.path.basename(input_path)}: {str(e)}")
+
+@app.route('/preview_results')
+def preview_results():
+    """Show preview of processed files with cover pages removed"""
+    if 'timestamp' not in session:
+        flash('Please start from the beginning', 'error')
+        return redirect(url_for('index'))
+
+    preview_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'preview', session['timestamp'])
+    if not os.path.exists(preview_folder):
+        flash('No processed files found', 'error')
+        return redirect(url_for('step3'))
+
+    # Get list of processed files
+    processed_files = []
+    for filename in os.listdir(preview_folder):
+        if filename.endswith('.pdf'):
+            try:
+                pdf_path = os.path.join(preview_folder, filename)
+                reader = PyPDF2.PdfReader(pdf_path)
+                processed_files.append({
+                    'name': filename,
+                    'page_count': len(reader.pages)
+                })
+            except Exception as e:
+                flash(f'Error reading {filename}: {str(e)}', 'warning')
+
+    return render_template('preview_results.html',
+                         processed_files=processed_files,
+                         timestamp=session['timestamp'],
+                         active_step=4,
+                         progress_percentage="100%")
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5002) 
