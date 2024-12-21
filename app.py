@@ -347,6 +347,12 @@ def local_css():
             --violet: #AF47E8;
             --black: #000000;
             --gold: #C9A649;
+            --light-purple: #f7f0fa;
+        }
+        
+        /* Page background */
+        .stApp {
+            background: linear-gradient(135deg, var(--light-purple) 0%, var(--white) 100%);
         }
         
         /* Typography */
@@ -364,122 +370,100 @@ def local_css():
         .caption {
             font-style: italic;
             color: var(--violet);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
         }
         
         /* Buttons */
         .stButton > button {
             font-family: 'Comfortaa', sans-serif !important;
-            background-color: var(--purple) !important;
+            background: linear-gradient(135deg, var(--purple) 0%, var(--violet) 100%) !important;
             color: var(--white) !important;
             border: none !important;
-            border-radius: 4px !important;
-            padding: 0.5rem 1rem !important;
+            border-radius: 8px !important;
+            padding: 0.6rem 1.5rem !important;
             font-weight: 600 !important;
-            transition: background-color 0.3s ease !important;
+            transition: all 0.3s ease !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2) !important;
+            box-shadow: 0 2px 4px rgba(118,48,155,0.2) !important;
         }
         
         .stButton > button:hover {
-            background-color: var(--violet) !important;
+            background: linear-gradient(135deg, var(--violet) 0%, var(--purple) 100%) !important;
             color: var(--white) !important;
-        }
-        
-        /* Progress Bar */
-        .stProgress > div > div > div {
-            background-color: var(--purple) !important;
-            transition: width 0.3s ease-in-out !important;
-        }
-        
-        /* Expander */
-        .streamlit-expanderHeader {
-            font-family: 'Comfortaa', sans-serif !important;
-            color: var(--violet) !important;
-        }
-        
-        /* Success/Error messages */
-        .success {
-            color: var(--purple) !important;
-        }
-        
-        .error {
-            color: #FF4B4B !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 8px rgba(118,48,155,0.3) !important;
         }
         
         /* Header area with logo */
         .header-container {
             display: flex;
             align-items: center;
-            padding: 0.5rem 2rem;
+            justify-content: space-between;
+            padding: 1rem 3rem;
             margin: -4rem -4rem 2rem -4rem;
-            background-color: var(--white);
-            border-bottom: 2px solid var(--purple);
+            background: linear-gradient(135deg, var(--purple) 0%, var(--violet) 100%);
             position: relative;
             z-index: 1;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .logo-section {
+            display: flex;
+            align-items: center;
         }
         
         .logo {
             height: 35px;
-            margin-right: 1rem;
+            filter: brightness(0) invert(1);
+            margin-right: 1.5rem;
         }
         
         .header-title {
             font-family: 'Montserrat', sans-serif !important;
-            color: var(--purple);
+            color: var(--white) !important;
             margin: 0;
             padding: 0;
-            font-size: 1.6rem;
+            font-size: 1.8rem;
             font-weight: 700;
             letter-spacing: -0.5px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
-        /* Input fields */
-        .stTextInput > div > div > input {
-            font-family: 'Comfortaa', sans-serif !important;
+        /* Upload area styling */
+        .upload-area {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2rem 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 2px solid rgba(118,48,155,0.1);
         }
 
-        /* Remove duplicate title */
-        .main-title {
-            display: none !important;
-        }
-
-        /* Assignment URL input */
-        .url-input input {
-            background-color: var(--white);
-            border: 2px solid var(--purple);
-            border-radius: 4px;
-            padding: 0.5rem;
-            font-family: 'Comfortaa', sans-serif !important;
-        }
-        
-        .url-input input:focus {
-            border-color: var(--violet);
-            box-shadow: 0 0 0 1px var(--violet);
-        }
-
-        /* Progress tracking */
-        .upload-status {
+        .upload-message {
+            color: var(--purple);
+            font-size: 0.9rem;
             margin-top: 1rem;
-            padding: 1.5rem;
-            background-color: var(--white);
+            padding: 0.8rem;
+            background: var(--light-purple);
+            border-radius: 6px;
+            border: 1px solid rgba(118,48,155,0.2);
+        }
+
+        /* File list styling */
+        .file-list {
+            background: var(--white);
             border-radius: 8px;
-            border: 2px solid var(--purple);
+            padding: 1rem;
+            margin-top: 1rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
 
-        .upload-progress {
-            margin-bottom: 1rem;
-        }
-
-        .upload-status-header {
-            color: var(--purple);
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            font-size: 1.1rem;
-        }
-
-        .upload-complete {
-            background-color: #f0fff4;
-            border-color: #68d391;
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            border-bottom: 1px solid rgba(118,48,155,0.1);
         }
 
         /* Hide redundant title */
@@ -487,22 +471,25 @@ def local_css():
             display: none;
         }
 
-        /* Radio buttons */
-        .stRadio > div {
-            margin-top: 0.5rem;
-        }
-
-        .stRadio label {
-            color: var(--black) !important;
-        }
-
-        /* Selectbox */
+        /* Selectbox and other inputs */
         .stSelectbox > div > div {
             background-color: var(--white);
             border: 2px solid var(--purple);
+            border-radius: 8px;
         }
 
         .stSelectbox > div > div:hover {
+            border-color: var(--violet);
+        }
+
+        .stFileUploader > div {
+            background: var(--white);
+            padding: 2rem;
+            border-radius: 12px;
+            border: 2px dashed var(--purple);
+        }
+
+        .stFileUploader > div:hover {
             border-color: var(--violet);
         }
         </style>
@@ -521,8 +508,10 @@ def main():
     # Display logo and title in header
     st.markdown("""
         <div class="header-container">
-            <img src="data:image/svg+xml;base64,{}" class="logo" alt="AcademIQ Logo">
-            <h1 class="header-title">Digital Marking App</h1>
+            <div class="logo-section">
+                <img src="data:image/svg+xml;base64,{}" class="logo" alt="AcademIQ Logo">
+                <h1 class="header-title">Digital Marking App</h1>
+            </div>
         </div>
     """.format(base64.b64encode(open('logo.svg', 'rb').read()).decode()), unsafe_allow_html=True)
     
@@ -550,41 +539,27 @@ def main():
 
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.markdown('<p class="caption">Select PDF files to process</p>', unsafe_allow_html=True)
-
-        # Create progress tracking container
-        progress_container = st.empty()
-        with progress_container.container():
-            st.markdown('<div class="upload-status">', unsafe_allow_html=True)
-            st.markdown('<div class="upload-status-header">Upload Progress</div>', unsafe_allow_html=True)
-            st.markdown('<p>Please wait while files are being processed...</p>', unsafe_allow_html=True)
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<p class="caption">Upload and process student exam PDFs</p>', unsafe_allow_html=True)
 
         # File upload section
+        st.markdown('<div class="upload-area">', unsafe_allow_html=True)
         uploaded_files = st.file_uploader(
             "Select PDFs",
             type=['pdf'],
             accept_multiple_files=True,
-            help="Choose one or more PDF files to process",
-            on_change=lambda: progress_bar.progress(0)  # Reset progress when files change
+            help="Choose one or more PDF files to process"
         )
 
         if uploaded_files:
+            st.markdown('<div class="upload-message">✨ Files uploaded. Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
+            
             # Create a unique folder for this session's uploads
             session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
             os.makedirs(session_folder, exist_ok=True)
 
             # Process each uploaded file
-            total_files = len(uploaded_files)
-            for idx, uploaded_file in enumerate(uploaded_files, 1):
+            for uploaded_file in uploaded_files:
                 if allowed_file(uploaded_file.name):
-                    # Update progress immediately
-                    progress = idx / total_files
-                    progress_bar.progress(progress, f"Processing file {idx} of {total_files}")
-                    status_text.text(f"Current file: {uploaded_file.name}")
-                    
                     # Secure the filename
                     filename = secure_filename(uploaded_file.name)
                     save_path = os.path.join(session_folder, filename)
@@ -597,65 +572,38 @@ def main():
                         st.error(f"Failed to save {filename}")
                 else:
                     st.error(f"Invalid file type: {uploaded_file.name}")
-            
-            status_text.text("All files processed successfully!")
 
-            # Update progress container to show completion
-            with progress_container.container():
-                st.markdown('<div class="upload-status upload-complete">', unsafe_allow_html=True)
-                st.markdown('<div class="upload-status-header">✓ Upload Complete</div>', unsafe_allow_html=True)
-                st.markdown(f'<p>Successfully processed {len(uploaded_files)} files</p>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-            # Display uploaded files
-            if st.session_state.processed_files:
-                st.write("### Processed Files")
-                for idx, filename in enumerate(st.session_state.processed_files, 1):
-                    file_path = os.path.join(session_folder, filename)
-                    if os.path.exists(file_path):
-                        try:
-                            with fitz.open(file_path) as doc:
-                                # Display file info
-                                col1, col2 = st.columns([3, 1])
-                                with col1:
-                                    st.write(f"{idx}. {filename} ({len(doc)} pages)")
-                                with col2:
-                                    if st.button(f"Remove {idx}", key=f"remove_{idx}"):
-                                        os.remove(file_path)
-                                        st.session_state.processed_files.remove(filename)
-                                        st.rerun()
-                        except Exception as e:
-                            st.error(f"Error reading {filename}: {str(e)}")
-
-                # Process button
-                if st.button("Process Files", type="primary"):
-                    with st.spinner("Processing with AcademIQ..."):
-                        # Use environment variable for API key
-                        api_key = st.secrets["OPENAI_API_KEY"]
-                        global client
-                        client = OpenAI(api_key=api_key)
-                        
-                        session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
-                        results = process_files_with_openai(
-                            st.session_state.processed_files,
-                            session_folder,
-                            api_key
-                        )
-                        
-                        # Display results
-                        st.write("### Processing Results")
-                        for result in results:
-                            if result['success']:
-                                st.success(f"Processed {result['original_filename']} → {result['new_filename']}")
-                                with st.expander("Show extracted text"):
-                                    st.text(result['extracted_text'])
-                            else:
-                                st.error(f"Failed to process {result['original_filename']}: {result['error']}")
-                        
-                        st.session_state.processing_complete = True
-                        st.session_state.processing_results = results
-                        st.session_state.current_step = 3
-                        st.rerun()
+        # Process button
+        if st.button("Process Files", type="primary"):
+            with st.spinner("Processing with AcademIQ..."):
+                # Use environment variable for API key
+                api_key = st.secrets["OPENAI_API_KEY"]
+                global client
+                client = OpenAI(api_key=api_key)
+                
+                session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
+                results = process_files_with_openai(
+                    st.session_state.processed_files,
+                    session_folder,
+                    api_key
+                )
+                
+                # Display results
+                st.write("### Processing Results")
+                for result in results:
+                    if result['success']:
+                        st.success(f"Processed {result['original_filename']} → {result['new_filename']}")
+                        with st.expander("Show extracted text"):
+                            st.text(result['extracted_text'])
+                    else:
+                        st.error(f"Failed to process {result['original_filename']}: {result['error']}")
+                
+                st.session_state.processing_complete = True
+                st.session_state.processing_results = results
+                st.session_state.current_step = 3
+                st.rerun()
 
     # Step 3: Canvas Student Matching
     elif st.session_state.current_step == 3:

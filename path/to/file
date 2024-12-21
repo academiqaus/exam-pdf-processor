@@ -1,0 +1,27 @@
+# Global variable for OpenAI client
+client = None
+MODEL = "gpt-4o-mini"  # Original model name
+
+# In the APIKeyValidationThread class
+def run(self):
+    global client
+    try:
+        # Initialize the OpenAI client with the API key
+        client = OpenAI(
+            api_key=self.api_key,
+            base_url="https://api.openai.com/v1"  # Explicitly set base URL
+        )
+
+        # Test the API key with a minimal call
+        client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "system", "content": "Ping"}],
+            max_tokens=1
+        )
+        if not self._terminate:
+            self.validation_complete.emit(True, "")
+    except AuthenticationError:
+        self.validation_complete.emit(False, "Invalid API Key. Please try again.")
+    except Exception as e:
+        if not self._terminate:
+            self.validation_complete.emit(False, str(e)) 
