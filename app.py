@@ -405,11 +405,12 @@ def local_css():
         .header-container {
             display: flex;
             align-items: center;
-            padding: 0;
-            margin: -6rem -4rem 2rem -4rem;
+            padding: 1rem 4rem;
+            margin: 0 -4rem 2rem -4rem;
             background-color: var(--white);
             border-bottom: 2px solid var(--purple);
-            padding: 1rem 4rem;
+            position: relative;
+            z-index: 1;
         }
         
         .logo {
@@ -447,6 +448,24 @@ def local_css():
             border-color: var(--violet);
             box-shadow: 0 0 0 1px var(--violet);
         }
+
+        /* Progress tracking */
+        .upload-status {
+            margin-top: 1rem;
+            padding: 1rem;
+            background-color: var(--white);
+            border-radius: 4px;
+            border: 1px solid var(--purple);
+        }
+
+        .upload-progress {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Hide redundant title */
+        [data-testid="stMarkdownContainer"] h3:first-of-type {
+            display: none;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -467,9 +486,6 @@ def main():
             <h1 class="header-title">Digital Marking App</h1>
         </div>
     """.format(base64.b64encode(open('logo.svg', 'rb').read()).decode()), unsafe_allow_html=True)
-    
-    # Create necessary folders and clean up old files
-    create_upload_folders()
     
     # Initialize session state
     if 'processed_files' not in st.session_state:
@@ -493,26 +509,24 @@ def main():
         atexit.register(cleanup_old_files)
         st.session_state.cleanup_registered = True
 
-    # Remove duplicate title by adding main-title class
-    st.markdown('<div class="main-title">', unsafe_allow_html=True)
-    st.title("Digital Marking App")
-    st.markdown('</div>', unsafe_allow_html=True)
-    
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.markdown('<h3 class="step-title">Step 1: Upload PDFs</h3>', unsafe_allow_html=True)
-        st.markdown('<p class="caption">Upload individual student exam PDFs for processing</p>', unsafe_allow_html=True)
+        st.markdown('<p class="caption">Select PDF files to process</p>', unsafe_allow_html=True)
 
-        # Create progress bar and status text at the start
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        # Create progress tracking container
+        progress_container = st.empty()
+        with progress_container.container():
+            st.markdown('<div class="upload-status">', unsafe_allow_html=True)
+            progress_bar = st.progress(0, "Upload Progress")
+            status_text = st.empty()
+            st.markdown('</div>', unsafe_allow_html=True)
 
         # File upload section
         uploaded_files = st.file_uploader(
-            "Upload student exam PDFs",
+            "Select PDFs",
             type=['pdf'],
             accept_multiple_files=True,
-            help="Select one or more PDF files containing student exams",
+            help="Choose one or more PDF files to process",
             on_change=lambda: progress_bar.progress(0)  # Reset progress when files change
         )
 
@@ -527,8 +541,8 @@ def main():
                 if allowed_file(uploaded_file.name):
                     # Update progress immediately
                     progress = idx / total_files
-                    progress_bar.progress(progress)
-                    status_text.text(f"Uploading {idx}/{total_files}: {uploaded_file.name}")
+                    progress_bar.progress(progress, f"Processing file {idx} of {total_files}")
+                    status_text.text(f"Current file: {uploaded_file.name}")
                     
                     # Secure the filename
                     filename = secure_filename(uploaded_file.name)
@@ -543,11 +557,11 @@ def main():
                 else:
                     st.error(f"Invalid file type: {uploaded_file.name}")
             
-            status_text.text("All files uploaded successfully!")
+            status_text.text("All files processed successfully!")
 
             # Display uploaded files
             if st.session_state.processed_files:
-                st.write("### Uploaded Files")
+                st.write("### Processed Files")
                 for idx, filename in enumerate(st.session_state.processed_files, 1):
                     file_path = os.path.join(session_folder, filename)
                     if os.path.exists(file_path):
@@ -597,7 +611,6 @@ def main():
 
     # Step 3: Canvas Student Matching
     elif st.session_state.current_step == 3:
-        st.markdown('<h3 class="step-title">Step 3: Canvas Student Matching</h3>', unsafe_allow_html=True)
         st.markdown('<p class="caption">Match processed files with Canvas students</p>', unsafe_allow_html=True)
         
         # Get session folder path
