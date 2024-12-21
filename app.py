@@ -374,17 +374,69 @@ def local_css():
             text-align: center;
             font-weight: 600;
         }
-        
-        .upload-message {
-            background: var(--light-purple);
-            color: var(--purple);
+
+        .caption .wait-text {
+            display: block;
+            font-weight: normal;
+            font-style: italic;
             font-size: 1rem;
-            margin: 1.5rem auto;
-            padding: 1rem 2rem;
-            text-align: center;
+            margin-top: 0.5rem;
+            color: var(--violet);
+        }
+
+        /* URL input styling */
+        .url-input {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 2rem auto;
+            max-width: 800px;
+            box-shadow: 0 2px 8px rgba(118,48,155,0.1);
+            border: 2px solid var(--purple);
+        }
+
+        .url-input input {
+            border: 2px solid var(--purple) !important;
+            border-radius: 8px !important;
+            padding: 0.6rem 1rem !important;
+        }
+
+        .url-input input:focus {
+            border-color: var(--violet) !important;
+            box-shadow: 0 0 0 1px var(--violet) !important;
+        }
+
+        /* Matching section styling */
+        .matching-section {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 2rem auto;
+            max-width: 800px;
+            box-shadow: 0 2px 8px rgba(118,48,155,0.1);
+            border: 2px solid var(--purple);
+        }
+
+        .matching-method {
+            margin: 1rem 0;
+        }
+
+        .matching-method .stRadio > div {
+            background: var(--white);
+            padding: 1rem;
             border-radius: 8px;
-            max-width: 600px;
             border: 1px solid rgba(118,48,155,0.2);
+        }
+
+        /* Results section */
+        .results-section {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 2rem auto;
+            max-width: 800px;
+            box-shadow: 0 2px 8px rgba(118,48,155,0.1);
+            border: 2px solid var(--purple);
         }
 
         /* Header area with logo */
@@ -537,7 +589,14 @@ def main():
 
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.markdown('<div class="caption-container"><p class="caption">Upload Split Student PDF Files<br>Please wait for the "Process Files" button to appear...</p></div>', unsafe_allow_html=True)
+        st.markdown('''
+            <div class="caption-container">
+                <p class="caption">
+                    Upload Split Student PDF Files
+                    <span class="wait-text">Please wait for the "Process Files" button to appear...</span>
+                </p>
+            </div>
+        ''', unsafe_allow_html=True)
 
         # File upload section
         st.markdown('<div class="upload-area">', unsafe_allow_html=True)
@@ -608,7 +667,7 @@ def main():
 
     # Step 3: Canvas Student Matching
     elif st.session_state.current_step == 3:
-        st.markdown('<p class="caption">Match processed files with Canvas students</p>', unsafe_allow_html=True)
+        st.markdown('<div class="caption-container"><p class="caption">Match Processed Files with Canvas Students</p></div>', unsafe_allow_html=True)
         
         # Get session folder path
         session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
@@ -624,24 +683,24 @@ def main():
         # Canvas API Configuration with auto-update
         st.markdown('<div class="url-input">', unsafe_allow_html=True)
         assignment_url = st.text_input(
-            "Assignment URL",
-            help="Example: https://canvas.parra.catholic.edu.au/courses/12345/assignments/67890",
-            key="assignment_url"
+            "Canvas Assignment URL",
+            help="Example: https://canvas.parra.catholic.edu.au/courses/12345/assignments/67890"
         )
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Matching mode selection
-        st.write("#### Select Matching Method")
+        st.markdown('<div class="matching-section">', unsafe_allow_html=True)
+        st.markdown('<h4>Select Matching Method</h4>', unsafe_allow_html=True)
+        st.markdown('<div class="matching-method">', unsafe_allow_html=True)
         matching_mode = st.radio(
-            "Matching Method",
+            "",  # Empty label since we're using the h4 above
             options=['name_and_number', 'name_only'],
             format_func=lambda x: "Use both Name and NESA Number" if x == 'name_and_number' else "Use Name Only",
-            help="""
-            'Use both Name and NESA Number': Attempts to match using NESA number first, then falls back to name matching if needed.
-            'Use Name Only': Only uses student names for matching.
-            """
+            help="'Use both Name and NESA Number': Attempts to match using NESA number first, then falls back to name matching if needed.\n'Use Name Only': Only uses student names for matching."
         )
-        
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
         if assignment_url:
             # Extract base URL and IDs from assignment URL
             canvas_api_url, course_id, assignment_id = extract_course_assignment_ids(assignment_url)
@@ -671,6 +730,7 @@ def main():
                     )
                     
                     # Display results
+                    st.markdown('<div class="results-section">', unsafe_allow_html=True)
                     st.write("### Matching Results")
                     
                     # Show matches
@@ -759,6 +819,7 @@ def main():
                         if st.button("Continue to Next Step"):
                             st.session_state.current_step = 4
                             st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main() 
