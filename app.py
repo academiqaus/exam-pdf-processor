@@ -357,13 +357,13 @@ def local_css():
         
         /* Typography */
         .caption-container {
-            background: var(--white);
+            background: var(--light-purple);
             border-radius: 12px;
             padding: 1.5rem;
             margin: 2rem auto;
             max-width: 800px;
-            box-shadow: 0 2px 8px rgba(118,48,155,0.1);
-            border: 2px solid var(--purple);
+            box-shadow: none;
+            border: 1px solid rgba(118,48,155,0.2);
         }
         
         .caption {
@@ -391,7 +391,7 @@ def local_css():
         .header-container {
             display: flex;
             align-items: center;
-            justify-content: flex-start;
+            justify-content: center;
             padding: 1.5rem 3rem;
             margin: -4rem -4rem 2rem -4rem;
             background: var(--light-purple);
@@ -404,11 +404,11 @@ def local_css():
         .logo-section {
             display: flex;
             align-items: center;
+            gap: 2rem;
         }
         
         .logo {
             height: 40px;
-            margin-right: 2rem;
         }
         
         .header-title {
