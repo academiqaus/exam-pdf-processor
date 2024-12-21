@@ -372,6 +372,8 @@ def local_css():
             color: var(--violet);
             font-size: 1.1rem;
             margin-bottom: 2rem;
+            text-align: center;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
         
         /* Buttons */
@@ -399,8 +401,8 @@ def local_css():
         .header-container {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            padding: 1rem 3rem;
+            justify-content: flex-start;
+            padding: 1.5rem 3rem;
             margin: -4rem -4rem 2rem -4rem;
             background: linear-gradient(135deg, var(--purple) 0%, var(--violet) 100%);
             position: relative;
@@ -414,59 +416,85 @@ def local_css():
         }
         
         .logo {
-            height: 35px;
+            height: 40px;
             filter: brightness(0) invert(1);
-            margin-right: 1.5rem;
+            margin-right: 2rem;
+            transition: transform 0.3s ease;
+        }
+        
+        .logo:hover {
+            transform: scale(1.05);
         }
         
         .header-title {
             font-family: 'Montserrat', sans-serif !important;
-            color: var(--white) !important;
+            background: linear-gradient(135deg, var(--white) 0%, var(--gold) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
             margin: 0;
             padding: 0;
-            font-size: 1.8rem;
+            font-size: 2rem;
             font-weight: 700;
             letter-spacing: -0.5px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            text-shadow: none;
         }
 
         /* Upload area styling */
         .upload-area {
-            background: var(--white);
-            border-radius: 12px;
-            padding: 2rem;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            padding: 2.5rem;
             margin: 2rem 0;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            box-shadow: 0 8px 32px rgba(118,48,155,0.1);
             border: 2px solid rgba(118,48,155,0.1);
+            backdrop-filter: blur(8px);
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 48px rgba(118,48,155,0.15);
         }
 
         .upload-message {
             color: var(--purple);
-            font-size: 0.9rem;
-            margin-top: 1rem;
-            padding: 0.8rem;
-            background: var(--light-purple);
-            border-radius: 6px;
-            border: 1px solid rgba(118,48,155,0.2);
-        }
-
-        /* File list styling */
-        .file-list {
-            background: var(--white);
-            border-radius: 8px;
+            font-size: 1rem;
+            margin-top: 1.5rem;
             padding: 1rem;
-            margin-top: 1rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            background: var(--light-purple);
+            border-radius: 8px;
+            border: 1px solid rgba(118,48,155,0.2);
+            text-align: center;
+            animation: fadeIn 0.5s ease-out;
         }
 
-        .file-item {
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* File uploader styling */
+        .stFileUploader > div {
+            background: var(--white);
+            padding: 2.5rem;
+            border-radius: 16px;
+            border: 2px dashed var(--purple);
+            transition: all 0.3s ease;
+        }
+
+        .stFileUploader > div:hover {
+            border-color: var(--violet);
+            background: var(--light-purple);
+        }
+
+        .stFileUploader > div > div {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            padding: 0.5rem;
-            border-bottom: 1px solid rgba(118,48,155,0.1);
+            gap: 1rem;
         }
 
-        /* Hide redundant title */
+        /* Hide redundant elements */
         [data-testid="stMarkdownContainer"] h3:first-of-type {
             display: none;
         }
@@ -539,7 +567,7 @@ def main():
 
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.markdown('<p class="caption">Upload and process student exam PDFs</p>', unsafe_allow_html=True)
+        st.markdown('<p class="caption">Transform Your Paper Exams into Digital Format</p>', unsafe_allow_html=True)
 
         # File upload section
         st.markdown('<div class="upload-area">', unsafe_allow_html=True)
@@ -551,7 +579,7 @@ def main():
         )
 
         if uploaded_files:
-            st.markdown('<div class="upload-message">✨ Files uploaded. Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
+            st.markdown('<div class="upload-message">✨ Files uploaded successfully! Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
             
             # Create a unique folder for this session's uploads
             session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
