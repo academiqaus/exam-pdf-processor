@@ -379,9 +379,9 @@ def local_css():
         /* Buttons */
         .stButton > button {
             font-family: 'Comfortaa', sans-serif !important;
-            background: var(--purple) !important;
-            color: var(--white) !important;
-            border: none !important;
+            background: var(--white) !important;
+            color: var(--purple) !important;
+            border: 2px solid var(--purple) !important;
             border-radius: 8px !important;
             padding: 0.6rem 1.5rem !important;
             font-weight: 600 !important;
@@ -389,7 +389,8 @@ def local_css():
         }
         
         .stButton > button:hover {
-            background: var(--violet) !important;
+            background: var(--purple) !important;
+            color: var(--white) !important;
             transform: translateY(-1px) !important;
         }
         
@@ -413,7 +414,6 @@ def local_css():
         
         .logo {
             height: 40px;
-            filter: brightness(0) invert(1);
             margin-right: 2rem;
         }
         
@@ -527,8 +527,8 @@ def main():
 
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
-        st.markdown('<h1 class="header-title">Digital Marking App</h1>', unsafe_allow_html=True)
         st.markdown('<p class="caption">Upload Split Student PDFs</p>', unsafe_allow_html=True)
+        st.markdown('<div class="upload-message">Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
 
         # File upload section
         st.markdown('<div class="upload-area">', unsafe_allow_html=True)
@@ -540,8 +540,6 @@ def main():
         )
 
         if uploaded_files:
-            st.markdown('<div class="upload-message">Please wait for the "Process Files" button to appear...</div>', unsafe_allow_html=True)
-            
             # Create a unique folder for this session's uploads
             session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
             os.makedirs(session_folder, exist_ok=True)
