@@ -401,10 +401,11 @@ def local_css():
             justify-content: flex-start;
             padding: 1.5rem 3rem;
             margin: -4rem -4rem 2rem -4rem;
-            background: var(--purple);
+            background: var(--light-purple);
             position: relative;
             z-index: 1;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-bottom: 2px solid var(--purple);
         }
         
         .logo-section {
@@ -419,7 +420,7 @@ def local_css():
         
         .header-title {
             font-family: 'Montserrat', sans-serif !important;
-            color: var(--white) !important;
+            color: var(--purple) !important;
             margin: 0;
             padding: 0;
             font-size: 2rem;
