@@ -410,33 +410,65 @@ def local_css():
         .matching-section {
             background: var(--white);
             border-radius: 12px;
-            padding: 1.5rem;
+            padding: 2rem;
             margin: 2rem auto;
             max-width: 800px;
             box-shadow: 0 2px 8px rgba(118,48,155,0.1);
             border: 2px solid var(--purple);
+        }
+
+        .matching-section h4 {
+            color: var(--purple);
+            margin-bottom: 1rem;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
         }
 
         .matching-method {
             margin: 1rem 0;
         }
 
+        .matching-method .stRadio {
+            background: transparent;
+        }
+
         .matching-method .stRadio > div {
+            gap: 0.5rem;
+        }
+
+        .matching-method .stRadio > div > div {
             background: var(--white);
             padding: 1rem;
             border-radius: 8px;
             border: 1px solid rgba(118,48,155,0.2);
+            margin: 0.5rem 0;
+        }
+
+        .matching-method .stRadio > div > div:hover {
+            border-color: var(--violet);
+        }
+
+        .matching-method .stRadio label {
+            color: var(--purple) !important;
+            font-weight: 500;
         }
 
         /* Results section */
         .results-section {
             background: var(--white);
             border-radius: 12px;
-            padding: 1.5rem;
+            padding: 2rem;
             margin: 2rem auto;
             max-width: 800px;
             box-shadow: 0 2px 8px rgba(118,48,155,0.1);
             border: 2px solid var(--purple);
+        }
+
+        .results-section h3, .results-section h4 {
+            color: var(--purple);
+            margin-bottom: 1rem;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
         }
 
         /* Header area with logo */
@@ -691,14 +723,12 @@ def main():
         # Matching mode selection
         st.markdown('<div class="matching-section">', unsafe_allow_html=True)
         st.markdown('<h4>Select Matching Method</h4>', unsafe_allow_html=True)
-        st.markdown('<div class="matching-method">', unsafe_allow_html=True)
         matching_mode = st.radio(
             "",  # Empty label since we're using the h4 above
             options=['name_and_number', 'name_only'],
             format_func=lambda x: "Use both Name and NESA Number" if x == 'name_and_number' else "Use Name Only",
             help="'Use both Name and NESA Number': Attempts to match using NESA number first, then falls back to name matching if needed.\n'Use Name Only': Only uses student names for matching."
         )
-        st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
         if assignment_url:
