@@ -382,6 +382,7 @@ def local_css():
             font-size: 1rem;
             margin-top: 0.5rem;
             color: var(--violet);
+            opacity: 0.9;
         }
 
         /* URL input styling */
@@ -422,6 +423,15 @@ def local_css():
             margin-bottom: 1rem;
             font-family: 'Montserrat', sans-serif;
             font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .matching-section .help-icon {
+            color: var(--purple);
+            opacity: 0.7;
+            font-size: 1rem;
         }
 
         .matching-method {
@@ -699,7 +709,7 @@ def main():
 
     # Step 3: Canvas Student Matching
     elif st.session_state.current_step == 3:
-        st.markdown('<div class="caption-container"><p class="caption">Match Processed Files with Canvas Students</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="caption-container"><p class="caption">Match Processed Files with Canvas Students<span class="wait-text">Please paste the Canvas Assignment URL below to begin matching...</span></p></div>', unsafe_allow_html=True)
         
         # Get session folder path
         session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
@@ -714,12 +724,12 @@ def main():
         
         # Canvas API Configuration with auto-update
         assignment_url = st.text_input(
-            "Canvas Assignment URL",
+            "Paste Canvas Assignment URL",
             help="Example: https://canvas.parra.catholic.edu.au/courses/12345/assignments/67890"
         )
         
         # Matching mode selection
-        st.markdown('<h4>Select Matching Method</h4>', unsafe_allow_html=True)
+        st.markdown('<h4>Select Matching Method <span class="help-icon">ⓘ</span></h4>', unsafe_allow_html=True)
         matching_mode = st.radio(
             "",  # Empty label since we're using the h4 above
             options=['name_and_number', 'name_only'],
