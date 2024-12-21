@@ -546,6 +546,7 @@ def main():
             os.makedirs(session_folder, exist_ok=True)
 
             # Process each uploaded file
+            all_files_saved = True  # Track if all files are saved successfully
             for uploaded_file in uploaded_files:
                 if allowed_file(uploaded_file.name):
                     # Secure the filename
@@ -558,40 +559,44 @@ def main():
                             st.session_state.processed_files.append(filename)
                     else:
                         st.error(f"Failed to save {filename}")
+                        all_files_saved = False
                 else:
                     st.error(f"Invalid file type: {uploaded_file.name}")
+                    all_files_saved = False
+
+            # Only show the Process Files button if all files are saved successfully
+            if all_files_saved and len(st.session_state.processed_files) > 0:
+                # Process button
+                if st.button("Process Files", type="primary"):
+                    with st.spinner("Processing with AcademIQ..."):
+                        # Use environment variable for API key
+                        api_key = st.secrets["OPENAI_API_KEY"]
+                        global client
+                        client = OpenAI(api_key=api_key)
+                        
+                        session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
+                        results = process_files_with_openai(
+                            st.session_state.processed_files,
+                            session_folder,
+                            api_key
+                        )
+                        
+                        # Display results
+                        st.write("### Processing Results")
+                        for result in results:
+                            if result['success']:
+                                st.success(f"Processed {result['original_filename']} → {result['new_filename']}")
+                                with st.expander("Show extracted text"):
+                                    st.text(result['extracted_text'])
+                            else:
+                                st.error(f"Failed to process {result['original_filename']}: {result['error']}")
+                        
+                        st.session_state.processing_complete = True
+                        st.session_state.processing_results = results
+                        st.session_state.current_step = 3
+                        st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
-
-        # Process button
-        if st.button("Process Files", type="primary"):
-            with st.spinner("Processing with AcademIQ..."):
-                # Use environment variable for API key
-                api_key = st.secrets["OPENAI_API_KEY"]
-                global client
-                client = OpenAI(api_key=api_key)
-                
-                session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
-                results = process_files_with_openai(
-                    st.session_state.processed_files,
-                    session_folder,
-                    api_key
-                )
-                
-                # Display results
-                st.write("### Processing Results")
-                for result in results:
-                    if result['success']:
-                        st.success(f"Processed {result['original_filename']} → {result['new_filename']}")
-                        with st.expander("Show extracted text"):
-                            st.text(result['extracted_text'])
-                    else:
-                        st.error(f"Failed to process {result['original_filename']}: {result['error']}")
-                
-                st.session_state.processing_complete = True
-                st.session_state.processing_results = results
-                st.session_state.current_step = 3
-                st.rerun()
 
     # Step 3: Canvas Student Matching
     elif st.session_state.current_step == 3:
