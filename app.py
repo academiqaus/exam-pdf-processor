@@ -423,15 +423,6 @@ def local_css():
             margin-bottom: 1rem;
             font-family: 'Montserrat', sans-serif;
             font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .matching-section .help-icon {
-            color: var(--purple);
-            opacity: 0.7;
-            font-size: 1rem;
         }
 
         .matching-method {
@@ -729,9 +720,9 @@ def main():
         )
         
         # Matching mode selection
-        st.markdown('<h4>Select Matching Method <span class="help-icon">ⓘ</span></h4>', unsafe_allow_html=True)
+        st.markdown('<h4>Select Matching Method</h4>', unsafe_allow_html=True)
         matching_mode = st.radio(
-            "",  # Empty label since we're using the h4 above
+            "Select how you want to match students with their files",  # This will show the help icon
             options=['name_and_number', 'name_only'],
             format_func=lambda x: "Use both Name and NESA Number" if x == 'name_and_number' else "Use Name Only",
             help="'Use both Name and NESA Number': Attempts to match using NESA number first, then falls back to name matching if needed.\n'Use Name Only': Only uses student names for matching."
