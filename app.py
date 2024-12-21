@@ -369,14 +369,16 @@ def local_css():
         .stButton > button {
             font-family: 'Comfortaa', sans-serif !important;
             background-color: var(--purple) !important;
-            color: white !important;
+            color: var(--white) !important;
             border: none !important;
             border-radius: 4px !important;
             padding: 0.5rem 1rem !important;
+            font-weight: 600 !important;
         }
         
         .stButton > button:hover {
             background-color: var(--violet) !important;
+            color: var(--white) !important;
         }
         
         /* Progress Bar */
@@ -403,13 +405,15 @@ def local_css():
         .header-container {
             display: flex;
             align-items: center;
-            padding: 1rem 0;
-            margin-bottom: 2rem;
+            padding: 0;
+            margin: -6rem -4rem 2rem -4rem;
+            background-color: var(--white);
             border-bottom: 2px solid var(--purple);
+            padding: 1rem 4rem;
         }
         
         .logo {
-            height: 50px;
+            height: 40px;
             margin-right: 1rem;
         }
         
@@ -417,13 +421,38 @@ def local_css():
             color: var(--purple);
             margin: 0;
             padding: 0;
+            font-size: 1.5rem;
+        }
+
+        /* Input fields */
+        .stTextInput > div > div > input {
+            font-family: 'Comfortaa', sans-serif !important;
+        }
+
+        /* Remove duplicate title */
+        .main-title {
+            display: none !important;
+        }
+
+        /* Assignment URL input */
+        .url-input input {
+            background-color: var(--white);
+            border: 2px solid var(--purple);
+            border-radius: 4px;
+            padding: 0.5rem;
+            font-family: 'Comfortaa', sans-serif !important;
+        }
+        
+        .url-input input:focus {
+            border-color: var(--violet);
+            box-shadow: 0 0 0 1px var(--violet);
         }
         </style>
     """, unsafe_allow_html=True)
 
 def main():
     st.set_page_config(
-        page_title="AcademIQ Exam PDF Processor",
+        page_title="Digital Marking App",
         layout="wide",
         initial_sidebar_state="collapsed"
     )
@@ -435,7 +464,7 @@ def main():
     st.markdown("""
         <div class="header-container">
             <img src="data:image/svg+xml;base64,{}" class="logo" alt="AcademIQ Logo">
-            <h1 class="header-title">Exam PDF Processor</h1>
+            <h1 class="header-title">Digital Marking App</h1>
         </div>
     """.format(base64.b64encode(open('logo.svg', 'rb').read()).decode()), unsafe_allow_html=True)
     
@@ -455,26 +484,36 @@ def main():
         st.session_state.processing_results = []
     if 'student_search' not in st.session_state:
         st.session_state.student_search = ""
+    if 'upload_progress' not in st.session_state:
+        st.session_state.upload_progress = 0
+        st.session_state.upload_status = ""
     
     # Add session cleanup on browser close/refresh
     if st.session_state.get('cleanup_registered') != True:
         atexit.register(cleanup_old_files)
         st.session_state.cleanup_registered = True
 
-    # App title and description
-    st.title("Exam PDF Processor")
+    # Remove duplicate title by adding main-title class
+    st.markdown('<div class="main-title">', unsafe_allow_html=True)
+    st.title("Digital Marking App")
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
         st.markdown('<h3 class="step-title">Step 1: Upload PDFs</h3>', unsafe_allow_html=True)
         st.markdown('<p class="caption">Upload individual student exam PDFs for processing</p>', unsafe_allow_html=True)
 
+        # Create progress bar and status text at the start
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
         # File upload section
         uploaded_files = st.file_uploader(
             "Upload student exam PDFs",
             type=['pdf'],
             accept_multiple_files=True,
-            help="Select one or more PDF files containing student exams"
+            help="Select one or more PDF files containing student exams",
+            on_change=lambda: progress_bar.progress(0)  # Reset progress when files change
         )
 
         if uploaded_files:
@@ -482,14 +521,15 @@ def main():
             session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
             os.makedirs(session_folder, exist_ok=True)
 
-            # Create progress bar for overall upload progress
-            total_files = len(uploaded_files)
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-
             # Process each uploaded file
+            total_files = len(uploaded_files)
             for idx, uploaded_file in enumerate(uploaded_files, 1):
                 if allowed_file(uploaded_file.name):
+                    # Update progress immediately
+                    progress = idx / total_files
+                    progress_bar.progress(progress)
+                    status_text.text(f"Uploading {idx}/{total_files}: {uploaded_file.name}")
+                    
                     # Secure the filename
                     filename = secure_filename(uploaded_file.name)
                     save_path = os.path.join(session_folder, filename)
@@ -498,16 +538,11 @@ def main():
                     if save_uploaded_file(uploaded_file, save_path):
                         if filename not in st.session_state.processed_files:
                             st.session_state.processed_files.append(filename)
-                            status_text.text(f"Uploaded: {filename}")
                     else:
                         st.error(f"Failed to save {filename}")
                 else:
                     st.error(f"Invalid file type: {uploaded_file.name}")
-                
-                # Update progress bar
-                progress = idx / total_files
-                progress_bar.progress(progress)
-                
+            
             status_text.text("All files uploaded successfully!")
 
             # Display uploaded files
@@ -560,7 +595,7 @@ def main():
                         st.session_state.current_step = 3
                         st.rerun()
 
-    # Step 3: Canvas Student Matching (improved UI)
+    # Step 3: Canvas Student Matching
     elif st.session_state.current_step == 3:
         st.markdown('<h3 class="step-title">Step 3: Canvas Student Matching</h3>', unsafe_allow_html=True)
         st.markdown('<p class="caption">Match processed files with Canvas students</p>', unsafe_allow_html=True)
@@ -576,10 +611,14 @@ def main():
                 st.rerun()
             return
         
-        # Canvas API Configuration
-        st.write("#### Canvas API Configuration")
-        assignment_url = st.text_input("Assignment URL", 
-                                     help="Example: https://canvas.parra.catholic.edu.au/courses/12345/assignments/67890")
+        # Canvas API Configuration with auto-update
+        st.markdown('<div class="url-input">', unsafe_allow_html=True)
+        assignment_url = st.text_input(
+            "Assignment URL",
+            help="Example: https://canvas.parra.catholic.edu.au/courses/12345/assignments/67890",
+            key="assignment_url"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
         
         # Matching mode selection
         st.write("#### Select Matching Method")
