@@ -354,6 +354,8 @@ def main():
         st.session_state.processing_complete = False
     if 'processing_results' not in st.session_state:
         st.session_state.processing_results = []
+    if 'student_search' not in st.session_state:
+        st.session_state.student_search = ""
     
     # Add session cleanup on browser close/refresh
     if st.session_state.get('cleanup_registered') != True:
@@ -363,7 +365,7 @@ def main():
     # App title and description
     st.title("Exam PDF Processor")
     
-    # Step 1: File Upload
+    # Step 1: File Upload with automatic processing
     if st.session_state.current_step == 1:
         st.write("### Step 1: Upload PDFs")
         st.write("Upload individual student exam PDFs for processing")
@@ -418,29 +420,15 @@ def main():
                         except Exception as e:
                             st.error(f"Error reading {filename}: {str(e)}")
 
-                # Continue button
-                if st.button("Continue to OpenAI Processing", type="primary"):
-                    st.session_state.current_step = 2
-                    st.rerun()
-
-    # Step 2: OpenAI Processing
-    elif st.session_state.current_step == 2:
-        st.write("### Step 2: OpenAI Processing")
-        st.write("Process the uploaded PDFs with OpenAI to extract student information")
-
-        # API Key input
-        api_key = st.text_input("Enter your OpenAI API key", type="password")
-        
-        if api_key:
-            try:
-                # Initialize OpenAI client without test call
-                global client
-                client = OpenAI(api_key=api_key)
-                
-                session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
-                
-                if st.button("Start Processing", type="primary", key="start_processing"):
+                # Process button
+                if st.button("Process Files", type="primary"):
                     with st.spinner("Processing files with OpenAI..."):
+                        # Use environment variable for API key
+                        api_key = st.secrets["OPENAI_API_KEY"]
+                        global client
+                        client = OpenAI(api_key=api_key)
+                        
+                        session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
                         results = process_files_with_openai(
                             st.session_state.processed_files,
                             session_folder,
@@ -458,21 +446,11 @@ def main():
                                 st.error(f"Failed to process {result['original_filename']}: {result['error']}")
                         
                         st.session_state.processing_complete = True
-                        # Save processing results to session state
                         st.session_state.processing_results = results
-                
-                # Only show continue button if processing is complete
-                if st.session_state.processing_complete:
-                    if st.button("Continue to Student Matching", type="primary", key="continue_to_matching"):
                         st.session_state.current_step = 3
                         st.rerun()
-                            
-            except AuthenticationError:
-                st.error("Invalid OpenAI API key")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
 
-    # Step 3: Canvas Student Matching
+    # Step 3: Canvas Student Matching (improved UI)
     elif st.session_state.current_step == 3:
         st.write("### Step 3: Canvas Student Matching")
         st.write("Match processed files with Canvas students")
@@ -482,9 +460,9 @@ def main():
         
         # Check if we have processing results
         if not st.session_state.processing_results:
-            st.error("No processed files found. Please complete the OpenAI processing step first.")
-            if st.button("Return to OpenAI Processing"):
-                st.session_state.current_step = 2
+            st.error("No processed files found. Please complete the processing step first.")
+            if st.button("Return to Upload"):
+                st.session_state.current_step = 1
                 st.rerun()
             return
         
@@ -511,8 +489,8 @@ def main():
             if not all([canvas_api_url, course_id, assignment_id]):
                 return
                 
-            # Hardcoded Canvas API key
-            canvas_api_key = "11905~vRUvZwu6PRvJQBMTEkctu4r8T6HY4KhJYJBJXVJ2H3rrk7eJAwvF24fE6T2x3heK"
+            # Get Canvas API key from secrets
+            canvas_api_key = st.secrets["CANVAS_API_KEY"]
             
             # Initialize Canvas
             canvas = authenticate_canvas(canvas_api_url, canvas_api_key)
@@ -526,7 +504,7 @@ def main():
             
             if st.button("Start Matching", type="primary"):
                 with st.spinner("Matching students..."):
-                    # Perform matching with selected mode
+                    # Perform matching
                     matches, unmatched = match_students_with_canvas(
                         st.session_state.processing_results,
                         students,
@@ -538,83 +516,98 @@ def main():
                     
                     # Show matches
                     if matches:
-                        st.write("#### Successful Matches")
-                        for match in matches:
-                            st.success(
-                                f"Matched {match['file_info']['new_filename']} → "
-                                f"{match['canvas_student_name']} (Score: {match['match_score']}%)"
-                            )
+                        with st.expander("View Successful Matches", expanded=False):
+                            for match in matches:
+                                st.success(
+                                    f"Matched {match['file_info']['new_filename']} → "
+                                    f"{match['canvas_student_name']} (Score: {match['match_score']}%)"
+                                )
                     
-                    # Handle unmatched files with manual matching
+                    # Handle unmatched files with improved UI
                     if unmatched:
                         st.write("#### Manual Matching Required")
-                        st.write("Please match the following files manually:")
                         
-                        # Create a dictionary of remaining students
-                        remaining_students = {
-                            str(student.id): student.name 
-                            for student in students 
-                            if not any(match['canvas_student_id'] == student.id for match in matches)
-                        }
+                        # Get list of unmatched students (excluding already matched ones)
+                        matched_student_ids = {match['canvas_student_id'] for match in matches}
+                        unmatched_students = [
+                            student for student in students 
+                            if student.id not in matched_student_ids
+                        ]
                         
-                        # Add a "Skip" option
-                        remaining_students['skip'] = "Skip this file"
+                        # Create a search box for students
+                        st.text_input(
+                            "Search students",
+                            value=st.session_state.student_search,
+                            key="student_search_input",
+                            placeholder="Type to search students..."
+                        )
                         
-                        manual_matches = {}
-                        for file_info in unmatched:
-                            if file_info.get('success', False):  # Only show files that were successfully processed by OpenAI
-                                st.write("---")  # Separator between files
-                                
-                                # Show PDF preview
-                                pdf_path = os.path.join(session_folder, file_info['new_filename'])
-                                preview_bytes = get_pdf_preview(pdf_path)
-                                if preview_bytes:
-                                    st.image(preview_bytes, caption=f"Preview: {file_info['new_filename']}", use_column_width=True)
-                                
-                                col1, col2 = st.columns([3, 2])
-                                with col1:
-                                    st.write(f"File: {file_info['new_filename']}")
-                                with col2:
-                                    selected_student = st.selectbox(
-                                        f"Match for {file_info['new_filename']}",
-                                        options=list(remaining_students.keys()),
-                                        format_func=lambda x: remaining_students[x],
-                                        key=f"manual_match_{file_info['new_filename']}"
-                                    )
-                                    if selected_student != 'skip':
-                                        manual_matches[file_info['new_filename']] = {
-                                            'file_info': file_info,
-                                            'canvas_student_id': int(selected_student),
-                                            'canvas_student_name': remaining_students[selected_student]
-                                        }
+                        # Filter students based on search
+                        search_term = st.session_state.student_search.lower()
+                        filtered_students = [
+                            student for student in unmatched_students
+                            if search_term in student.name.lower()
+                        ]
                         
-                        if manual_matches:
-                            if st.button("Confirm Manual Matches"):
-                                # Add manual matches to the matches list
-                                matches.extend(manual_matches.values())
-                                # Remove matched files from unmatched list
-                                unmatched = [f for f in unmatched if f['new_filename'] not in manual_matches]
-                                
-                                st.success("Manual matches confirmed!")
-                                
-                                # Update session state
-                                st.session_state.matching_results = {
-                                    'matches': matches,
-                                    'unmatched': unmatched
-                                }
-                                
-                                # Show continue button if all files are matched or explicitly skipped
-                                if not any(f.get('success', False) for f in unmatched):
-                                    if st.button("Continue to Next Step"):
-                                        st.session_state.current_step = 4
-                                        st.rerun()
+                        # Display unmatched files in a grid
+                        st.write("#### Unmatched Files")
+                        cols_per_row = 3
+                        unmatched_files = [f for f in unmatched if f.get('success', False)]
+                        
+                        for i in range(0, len(unmatched_files), cols_per_row):
+                            cols = st.columns(cols_per_row)
+                            for j, col in enumerate(cols):
+                                if i + j < len(unmatched_files):
+                                    file_info = unmatched_files[i + j]
+                                    with col:
+                                        # Show PDF preview
+                                        pdf_path = os.path.join(session_folder, file_info['new_filename'])
+                                        preview_bytes = get_pdf_preview(pdf_path)
+                                        if preview_bytes:
+                                            st.image(preview_bytes, use_column_width=True)
+                                        
+                                        st.write(f"**{file_info['new_filename']}**")
+                                        
+                                        # Student selection with both dropdown and search
+                                        selected_student = st.selectbox(
+                                            "Match with student",
+                                            options=[''] + [str(s.id) for s in filtered_students],
+                                            format_func=lambda x: "Select a student" if x == '' else next(
+                                                (s.name for s in filtered_students if str(s.id) == x),
+                                                "Unknown"
+                                            ),
+                                            key=f"match_{file_info['new_filename']}"
+                                        )
+                                        
+                                        if selected_student:
+                                            student = next(s for s in filtered_students if str(s.id) == selected_student)
+                                            matches.append({
+                                                'file_info': file_info,
+                                                'canvas_student_id': student.id,
+                                                'canvas_student_name': student.name,
+                                                'match_score': 100  # Manual match
+                                            })
+                                            unmatched_files.remove(file_info)
+                                            st.rerun()
+                        
+                        if not unmatched_files:
+                            st.success("All files have been matched!")
+                            # Save results to session state
+                            st.session_state.matching_results = {
+                                'matches': matches,
+                                'unmatched': []
+                            }
+                            
+                            if st.button("Continue to Next Step"):
+                                st.session_state.current_step = 4
+                                st.rerun()
                     else:
                         # All files matched automatically
                         st.success("All files matched successfully!")
                         # Save results to session state
                         st.session_state.matching_results = {
                             'matches': matches,
-                            'unmatched': unmatched
+                            'unmatched': []
                         }
                         
                         if st.button("Continue to Next Step"):
