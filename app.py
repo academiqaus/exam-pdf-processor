@@ -944,10 +944,10 @@ def main():
                                         if preview_bytes:
                                             st.image(preview_bytes, use_column_width=True)
                                         
-                                        # Show AI-processed name instead of filename
+                                        # Show the extracted name instead of "AI Output"
                                         ai_processed_name = file_info.get('student_name', '').replace('_', ' ')
                                         ai_processed_number = file_info.get('student_number', '')
-                                        st.write(f"**AI Output: {ai_processed_number}_{ai_processed_name}**")
+                                        st.write(f"**{ai_processed_number}_{ai_processed_name}**")
                                         
                                         # Student selection with searchable dropdown
                                         search_options = [
@@ -983,11 +983,15 @@ def main():
                                                 })
                                                 unmatched.remove(file_info)
                                                 
-                                                # Update session state
+                                                # Update session state without rerunning
                                                 st.session_state.matched_files = matches
                                                 st.session_state.matches = matches
                                                 
-                                                st.rerun()
+                                                # Only rerun if all files are matched
+                                                if not unmatched:
+                                                    st.session_state.matching_complete = True
+                                                    st.session_state.current_step = 3
+                                                    st.rerun()
                                             except Exception as e:
                                                 st.error(f"Error renaming file: {str(e)}")
                     
@@ -1004,7 +1008,7 @@ def main():
                                 st.session_state.current_step = 3
                                 st.rerun()
                         else:
-                            st.warning(f"Still {len(unmatched)} files need to be matched before proceeding.")
+                            st.warning(f"{len(unmatched)} file(s) still need to be matched")
                             st.button("Continue to Cover Page Removal", type="primary", disabled=True, key="continue_button_disabled")
                     
                     st.markdown('</div>', unsafe_allow_html=True)
