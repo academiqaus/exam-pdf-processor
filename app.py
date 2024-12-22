@@ -833,6 +833,7 @@ def main():
             st.markdown('<div style="text-align: center; margin-top: 2rem;">', unsafe_allow_html=True)
             if st.button("Continue to Cover Page Removal", type="primary", key="proceed_to_cover"):
                 st.session_state.current_step = 3
+                st.session_state.matching_complete = True  # Ensure this is set
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
             return
@@ -891,6 +892,9 @@ def main():
                         matching_mode
                     )
                     
+                    # Store matches in session state
+                    st.session_state.matches = matches
+                    
                     # Display results in a results section
                     st.markdown('<div class="results-section">', unsafe_allow_html=True)
                     st.write("### Matching Results")
@@ -923,9 +927,12 @@ def main():
                             if student.id not in matched_student_ids
                         ]
                         
+                        # Store unmatched data in session state
+                        st.session_state.unmatched = unmatched
+                        st.session_state.unmatched_students = unmatched_students
+                        
                         # Create a form for all manual matching
-                        manual_matching_form = st.form("manual_matching_form")
-                        with manual_matching_form:
+                        with st.form(key="manual_matching_form", clear_on_submit=True):
                             # Display unmatched files in a grid
                             cols_per_row = 3
                             selections = {}  # Store selections within form
@@ -1005,20 +1012,14 @@ def main():
                                         st.error(f"Error renaming file: {str(e)}")
                                 
                                 if matches_made:
-                                    # Force transition to step 3
+                                    # Update session state and proceed
                                     st.session_state.matched_files = matches
                                     st.session_state.matches = matches
                                     st.session_state.matching_complete = True
                                     st.session_state.current_step = 3
                                     st.session_state.unmatched_pdfs = []  # Clear unmatched files
                                     st.session_state.unmatched_students = {}  # Clear unmatched students
-                                    st.session_state.matching_started = False  # Reset matching started flag
-                                    # Clear all matching-related state
-                                    for key in list(st.session_state.keys()):
-                                        if key.startswith('form_match_') or key.startswith('manual_match_'):
-                                            st.session_state.pop(key, None)
                                     st.rerun()
-                                    return  # Exit immediately after rerun
                                 else:
                                     st.warning("No matches were selected. Please select at least one match before continuing.")
                     else:
@@ -1030,13 +1031,7 @@ def main():
                         st.session_state.current_step = 3
                         st.session_state.unmatched_pdfs = []  # Clear unmatched files
                         st.session_state.unmatched_students = {}  # Clear unmatched students
-                        st.session_state.matching_started = False  # Reset matching started flag
-                        # Clear all matching-related state
-                        for key in list(st.session_state.keys()):
-                            if key.startswith('form_match_') or key.startswith('manual_match_'):
-                                st.session_state.pop(key, None)
                         st.rerun()
-                        return  # Exit immediately after rerun
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1058,6 +1053,7 @@ def main():
         # Clear any remaining matching state
         st.session_state.pop('unmatched_pdfs', None)
         st.session_state.pop('unmatched_students', None)
+        st.session_state.pop('unmatched', None)
 
         st.markdown('<div class="caption-container"><p class="caption">Remove Cover Pages<span class="wait-text">Select booklet size to remove cover pages...</span></p></div>', unsafe_allow_html=True)
         
