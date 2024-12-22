@@ -248,8 +248,11 @@ def match_students_with_canvas(processed_files, canvas_students, session_folder,
     matches = []
     unmatched = []
     
-    # Create a dictionary of Canvas students for easy lookup
+    # Create dictionaries for tracking
     canvas_student_dict = {student.id: student for student in canvas_students}
+    processed_canvas_user_ids = set()
+    matched_students = set()
+    available_canvas_user_ids = set(canvas_student_dict.keys())
     
     # Process each file
     for file_info in processed_files:
@@ -267,14 +270,23 @@ def match_students_with_canvas(processed_files, canvas_students, session_folder,
         student_name = ' '.join(filename_parts[1:]).replace('.pdf', '')
         
         matched = False
+        canvas_user_id = None
         
-        if matching_mode == 'name_and_number':
-            # First try to match by NESA number if it's not "UnknownNumber"
-            if student_number != "UnknownNumber":
-                # Try to find a student with matching NESA number in Canvas
-                # This would require the NESA number to be stored in Canvas
-                # For now, we'll fall back to name matching
-                pass
+        # Skip files that are already in Canvas User ID format
+        if re.match(r'^\d+\.pdf$', file_info['new_filename']):
+            canvas_user_id = int(file_info['new_filename'].replace('.pdf', ''))
+            if canvas_user_id in canvas_student_dict:
+                matched_students.add(canvas_user_id)
+                processed_canvas_user_ids.add(canvas_user_id)
+                available_canvas_user_ids.discard(canvas_user_id)
+                matched = True
+                matches.append({
+                    'file_info': file_info,
+                    'canvas_student_id': canvas_user_id,
+                    'canvas_student_name': canvas_student_dict[canvas_user_id].name,
+                    'match_score': 100
+                })
+                continue
         
         # If no match by number or if using name_only mode, try name matching
         if not matched:
@@ -284,7 +296,9 @@ def match_students_with_canvas(processed_files, canvas_students, session_folder,
             # Convert student name to lowercase for comparison
             student_name_lower = student_name.lower()
             
-            for canvas_id, student in canvas_student_dict.items():
+            # Only try to match with available (unmatched) students
+            for canvas_id in available_canvas_user_ids:
+                student = canvas_student_dict[canvas_id]
                 canvas_name_lower = student.name.lower()
                 
                 # Try exact match first
@@ -317,12 +331,23 @@ def match_students_with_canvas(processed_files, canvas_students, session_folder,
                         'match_score': highest_score
                     })
                     matched = True
+                    matched_students.add(best_match.id)
+                    processed_canvas_user_ids.add(best_match.id)
+                    available_canvas_user_ids.discard(best_match.id)
                 except Exception as e:
                     st.error(f"Error renaming file: {str(e)}")
                     unmatched.append(file_info)
         
         if not matched:
             unmatched.append(file_info)
+    
+    # Store unmatched students in session state
+    unmatched_students = {
+        student_id: student.name 
+        for student_id, student in canvas_student_dict.items() 
+        if student_id not in matched_students
+    }
+    st.session_state.unmatched_students = unmatched_students
     
     return matches, unmatched
 
