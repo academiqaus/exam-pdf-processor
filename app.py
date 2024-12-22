@@ -985,12 +985,15 @@ def main():
                             submitted = st.form_submit_button("Apply Matches and Continue", type="primary")
                             
                             if submitted:
+                                st.write("DEBUG: Form submitted")
                                 matches_made = False
                                 
                                 # Process all selections made in the form
+                                st.write(f"DEBUG: Processing {len(selections)} selections")
                                 for filename, match_info in selections.items():
                                     file_info = match_info['file_info']
                                     selected_id = match_info['selected_id']
+                                    st.write(f"DEBUG: Processing match for {filename} with student ID {selected_id}")
                                     student = next(s for s in unmatched_students if str(s.id) == selected_id)
                                     
                                     # Rename file to use Canvas user ID
@@ -999,6 +1002,7 @@ def main():
                                     new_path = os.path.join(session_folder, new_filename)
                                     
                                     try:
+                                        st.write(f"DEBUG: Renaming {old_path} to {new_path}")
                                         os.rename(old_path, new_path)
                                         file_info['new_filename'] = new_filename
                                         matches.append({
@@ -1008,22 +1012,28 @@ def main():
                                             'match_score': 100  # Manual match
                                         })
                                         matches_made = True
+                                        st.write(f"DEBUG: Successfully matched and renamed file")
                                     except Exception as e:
                                         st.error(f"Error renaming file: {str(e)}")
                                 
                                 # Force transition to step 3 regardless of matches_made
+                                st.write("DEBUG: Updating session state for transition")
+                                st.write(f"DEBUG: Current step before update: {st.session_state.current_step}")
                                 st.session_state.matched_files = matches
                                 st.session_state.matches = matches
                                 st.session_state.matching_complete = True
                                 st.session_state.current_step = 3
+                                st.write(f"DEBUG: Current step after update: {st.session_state.current_step}")
                                 
                                 # Clear all matching-related state
+                                st.write("DEBUG: Clearing matching state")
                                 st.session_state.pop('unmatched_pdfs', None)
                                 st.session_state.pop('unmatched_students', None)
                                 st.session_state.pop('unmatched', None)
                                 st.session_state.pop('matching_started', None)
                                 
                                 # Force rerun to step 3
+                                st.write("DEBUG: Forcing rerun to step 3")
                                 st.rerun()
                     else:
                         # If no unmatched files, just show success and continue
@@ -1040,12 +1050,19 @@ def main():
 
     # Step 3: Cover Page Removal
     elif st.session_state.current_step == 3:
+        st.write("DEBUG: Entering Step 3")
+        st.write(f"DEBUG: Session state keys: {list(st.session_state.keys())}")
+        
         # Force step 3 state
         st.session_state.current_step = 3
         st.session_state.matching_complete = True
         
         # Verify we have matched files
-        if not st.session_state.get('matches') and not st.session_state.get('matched_files'):
+        has_matches = bool(st.session_state.get('matches'))
+        has_matched_files = bool(st.session_state.get('matched_files'))
+        st.write(f"DEBUG: Has matches: {has_matches}, Has matched files: {has_matched_files}")
+        
+        if not has_matches and not has_matched_files:
             st.error("No matched files found. Please complete the matching step first.")
             if st.button("Return to Matching"):
                 st.session_state.current_step = 2
@@ -1055,14 +1072,18 @@ def main():
 
         # Use matches if available, otherwise use matched_files
         if not st.session_state.matched_files and st.session_state.get('matches'):
+            st.write("DEBUG: Using matches from session state")
             st.session_state.matched_files = st.session_state.matches
 
         # Clear any remaining matching state
-        st.session_state.pop('unmatched_pdfs', None)
-        st.session_state.pop('unmatched_students', None)
-        st.session_state.pop('unmatched', None)
-        st.session_state.pop('matching_started', None)
+        st.write("DEBUG: Clearing matching state variables")
+        for key in ['unmatched_pdfs', 'unmatched_students', 'unmatched', 'matching_started']:
+            if key in st.session_state:
+                st.write(f"DEBUG: Removing {key} from session state")
+                st.session_state.pop(key, None)
 
+        st.write("DEBUG: Ready to show cover page removal interface")
+        
         st.markdown('<div class="caption-container"><p class="caption">Remove Cover Pages<span class="wait-text">Select booklet size to remove cover pages...</span></p></div>', unsafe_allow_html=True)
         
         # Get session folder path
