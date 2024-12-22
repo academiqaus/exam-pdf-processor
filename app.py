@@ -775,6 +775,9 @@ def main():
             st.success("All files have been matched successfully!")
             st.markdown('<div style="text-align: center; margin-top: 2rem;">', unsafe_allow_html=True)
             if st.button("Proceed to Cover Page Removal", type="primary", key="proceed_to_cover"):
+                # Store the matched files in session state before transitioning
+                if 'matches' in st.session_state:
+                    st.session_state.matched_files = st.session_state.matches
                 st.session_state.current_step = 3
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -846,12 +849,14 @@ def main():
                             st.success("All files have been matched!")
                             # Store results in session state
                             st.session_state.matched_files = matches
+                            st.session_state.matches = matches  # Store in both places
                             st.session_state.matching_complete = True
                             st.rerun()
                     else:
                         st.success("All files matched successfully!")
                         # Store results in session state
                         st.session_state.matched_files = matches
+                        st.session_state.matches = matches  # Store in both places
                         st.session_state.matching_complete = True
                         st.rerun()
                     
@@ -860,13 +865,17 @@ def main():
     # Step 3: Cover Page Removal
     elif st.session_state.current_step == 3:
         # Verify we have matched files
-        if not st.session_state.matched_files:
+        if not st.session_state.matched_files and not st.session_state.get('matches'):
             st.error("No matched files found. Please complete the matching step first.")
             if st.button("Return to Matching"):
                 st.session_state.current_step = 2
                 st.session_state.matching_complete = False
                 st.rerun()
             return
+
+        # If matched_files is not set but matches exists, use matches
+        if not st.session_state.matched_files and st.session_state.get('matches'):
+            st.session_state.matched_files = st.session_state.matches
 
         st.markdown('<div class="caption-container"><p class="caption">Remove Cover Pages<span class="wait-text">Select booklet size to remove cover pages...</span></p></div>', unsafe_allow_html=True)
         
