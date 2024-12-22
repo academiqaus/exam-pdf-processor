@@ -915,7 +915,7 @@ def main():
                     if unmatched:
                         st.write("#### Manual Matching Required")
                         st.write(f"Found {len(unmatched)} unmatched files that need manual matching.")
-                        st.write("Please match all files and then click 'Continue' to proceed.")
+                        st.write("Please match all files before proceeding.")
                         
                         # Get list of unmatched students (excluding already matched ones)
                         matched_student_ids = {match['canvas_student_id'] for match in matches}
@@ -926,8 +926,6 @@ def main():
                         
                         # Display unmatched files in a grid
                         cols_per_row = 3
-                        manual_matches_made = False  # Track if any manual matches were made
-                        
                         for i in range(0, len(unmatched), cols_per_row):
                             cols = st.columns(cols_per_row)
                             for j, col in enumerate(cols):
@@ -984,7 +982,6 @@ def main():
                                                     'match_score': 100  # Manual match
                                                 })
                                                 unmatched.remove(file_info)
-                                                manual_matches_made = True
                                                 
                                                 # Update session state
                                                 st.session_state.matched_files = matches
@@ -993,26 +990,22 @@ def main():
                                                 st.rerun()
                                             except Exception as e:
                                                 st.error(f"Error renaming file: {str(e)}")
-                        
-                        # Show continue button only if there are no unmatched files
+                    
+                    # Always show the continue button, but disable it if there are unmatched files
+                    st.markdown("---")
+                    col1, col2, col3 = st.columns([2, 2, 2])
+                    with col2:
                         if not unmatched:
-                            st.success("All files have been matched!")
-                            st.session_state.matched_files = matches
-                            st.session_state.matches = matches
-                            st.session_state.matching_complete = True
-                            
-                            if st.button("Continue to Cover Page Removal", type="primary"):
+                            st.success("All files have been matched! Click Continue to proceed.")
+                            if st.button("Continue to Cover Page Removal", type="primary", key="continue_button"):
+                                st.session_state.matched_files = matches
+                                st.session_state.matches = matches
+                                st.session_state.matching_complete = True
                                 st.session_state.current_step = 3
                                 st.rerun()
-                        elif manual_matches_made:
+                        else:
                             st.warning(f"Still {len(unmatched)} files need to be matched before proceeding.")
-                    else:
-                        st.success("All files matched successfully!")
-                        st.session_state.matched_files = matches
-                        st.session_state.matches = matches
-                        st.session_state.matching_complete = True
-                        st.session_state.current_step = 3
-                        st.rerun()
+                            st.button("Continue to Cover Page Removal", type="primary", disabled=True, key="continue_button_disabled")
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
