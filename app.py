@@ -923,6 +923,10 @@ def main():
                             if student.id not in matched_student_ids
                         ]
                         
+                        # Store selections in session state if not exists
+                        if 'manual_matches' not in st.session_state:
+                            st.session_state.manual_matches = {}
+                        
                         # Display unmatched files in a grid
                         cols_per_row = 3
                         for i in range(0, len(unmatched), cols_per_row):
@@ -963,10 +967,12 @@ def main():
                                             key=f"match_{filename}"
                                         )
                                         
-                                        # Just store the selection, no rerun
+                                        # Store selection without triggering rerun
                                         if selected:
-                                            match_key = f"match_{filename}"
-                                            st.session_state[match_key] = (file_info, selected)
+                                            st.session_state.manual_matches[filename] = {
+                                                'file_info': file_info,
+                                                'selected_id': selected
+                                            }
                         
                         # Add a divider
                         st.markdown("---")
@@ -978,33 +984,34 @@ def main():
                             if st.button("Apply Matches and Continue", type="primary"):
                                 matches_made = False
                                 
-                                # Process all stored matches
-                                for file_info in unmatched:
-                                    match_key = f"match_{file_info.get('new_filename')}"
-                                    if match_key in st.session_state:
-                                        file_info, selected_id = st.session_state[match_key]
-                                        student = next(s for s in unmatched_students if str(s.id) == selected_id)
-                                        
-                                        # Rename file to use Canvas user ID
-                                        old_path = os.path.join(session_folder, file_info['new_filename'])
-                                        new_filename = f"{student.id}.pdf"
-                                        new_path = os.path.join(session_folder, new_filename)
-                                        
-                                        try:
-                                            os.rename(old_path, new_path)
-                                            file_info['new_filename'] = new_filename
-                                            matches.append({
-                                                'file_info': file_info,
-                                                'canvas_student_id': student.id,
-                                                'canvas_student_name': student.name,
-                                                'match_score': 100  # Manual match
-                                            })
-                                            matches_made = True
-                                        except Exception as e:
-                                            st.error(f"Error renaming file: {str(e)}")
+                                # Process all stored manual matches
+                                for filename, match_info in st.session_state.manual_matches.items():
+                                    file_info = match_info['file_info']
+                                    selected_id = match_info['selected_id']
+                                    student = next(s for s in unmatched_students if str(s.id) == selected_id)
+                                    
+                                    # Rename file to use Canvas user ID
+                                    old_path = os.path.join(session_folder, file_info['new_filename'])
+                                    new_filename = f"{student.id}.pdf"
+                                    new_path = os.path.join(session_folder, new_filename)
+                                    
+                                    try:
+                                        os.rename(old_path, new_path)
+                                        file_info['new_filename'] = new_filename
+                                        matches.append({
+                                            'file_info': file_info,
+                                            'canvas_student_id': student.id,
+                                            'canvas_student_name': student.name,
+                                            'match_score': 100  # Manual match
+                                        })
+                                        matches_made = True
+                                    except Exception as e:
+                                        st.error(f"Error renaming file: {str(e)}")
                                 
-                                # Only proceed if at least one match was made
                                 if matches_made:
+                                    # Clear manual matches from session state
+                                    st.session_state.manual_matches = {}
+                                    # Update session state and proceed
                                     st.session_state.matched_files = matches
                                     st.session_state.matches = matches
                                     st.session_state.matching_complete = True
