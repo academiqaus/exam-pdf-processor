@@ -21,10 +21,11 @@ import zipfile
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s %(levelname)s: %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('app.log')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -338,9 +339,9 @@ def match_students_with_canvas(processed_files, canvas_students, session_folder,
                     best_match = student
             
             if best_match and highest_score >= 70:  # Threshold for accepting a match
-                # Rename the file to use Canvas user ID
+                # Rename the file to use Canvas user ID only
                 old_path = os.path.join(session_folder, file_info['new_filename'])
-                new_filename = f"{best_match.id}_{best_match.name.replace(' ', '_')}.pdf"
+                new_filename = f"{best_match.id}.pdf"  # Simplified filename
                 new_path = os.path.join(session_folder, new_filename)
                 
                 try:
@@ -374,7 +375,12 @@ def match_students_with_canvas(processed_files, canvas_students, session_folder,
     
     return matches, unmatched
 
-def get_pdf_preview(pdf_path, page_num=0, top_third_only=False):
+@st.cache_data
+def cache_pdf_preview(pdf_path, page_num, top_third_only=False):
+    """Cached version of PDF preview generation"""
+    return get_pdf_preview(pdf_path, page_num, top_third_only)
+
+def get_pdf_preview(pdf_path, page_num=0, top_third_only=False, zoom=4):
     """Generate a preview image of a PDF page"""
     try:
         doc = fitz.open(pdf_path)
@@ -386,9 +392,10 @@ def get_pdf_preview(pdf_path, page_num=0, top_third_only=False):
         
         # If top_third_only, only show the top third of the page
         if top_third_only:
-            rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1 / 3)
+            rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1 / 2)  # Changed to top half for better visibility
             
-        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=rect)  # 2x zoom for better quality
+        mat = fitz.Matrix(zoom, zoom)  # Use the zoom parameter
+        pix = page.get_pixmap(matrix=mat, clip=rect, alpha=False)  # Disable alpha for better quality
         img_bytes = pix.tobytes("png")
         doc.close()
         return img_bytes, total_pages
@@ -676,6 +683,84 @@ def local_css():
         </style>
     """, unsafe_allow_html=True)
 
+# Add this function for consistent logging
+def log_debug(message):
+    """Log debug message to both terminal and Streamlit interface"""
+    logger.debug(message)
+    st.write(f"DEBUG: {message}")
+
+def process_files():
+    log_debug("Starting process_files()")
+    log_debug(f"Current state: {st.session_state.get('state', 'unknown')}")
+    
+    if 'state' not in st.session_state:
+        st.session_state.state = "initial"
+    
+    if st.session_state.state == "initial":
+        log_debug("In initial state, processing uploaded files")
+        process_uploaded_files()
+        st.session_state.state = "matching"
+        log_debug(f"State changed to: {st.session_state.state}")
+        st.rerun()
+    
+    elif st.session_state.state == "matching":
+        log_debug("In matching state, handling manual matches")
+        if handle_manual_matches():
+            log_debug("Manual matching complete, transitioning to cover page removal")
+            st.session_state.state = "cover_page_removal"
+            st.rerun()
+    
+    elif st.session_state.state == "cover_page_removal":
+        log_debug("In cover_page_removal state, processing cover pages")
+        process_cover_pages()
+        st.session_state.state = "complete"
+        log_debug(f"State changed to: {st.session_state.state}")
+        st.rerun()
+
+def handle_manual_matches():
+    log_debug("Starting handle_manual_matches()")
+    log_debug(f"Current state: {st.session_state.state}")
+    log_debug(f"Current matches: {st.session_state.get('matches', [])}")
+    log_debug(f"Current unmatched files: {st.session_state.get('unmatched_files', [])}")
+    
+    if not st.session_state.get('unmatched_files'):
+        log_debug("No unmatched files to process")
+        st.session_state.state = "cover_page_removal"
+        return True
+    
+    with st.form("manual_matches"):
+        log_debug("Displaying manual matches form")
+        st.write("### Manual Matching")
+        st.write("Please match the following files with Canvas students:")
+        
+        matches_made = False
+        for i, file in enumerate(st.session_state.unmatched_files):
+            st.text_input(f"Match for {file}", key=f"match_{i}")
+        
+        submitted = st.form_submit_button("Apply Matches and Continue")
+        log_debug(f"Form submitted: {submitted}")
+        
+        if submitted:
+            log_debug("Processing manual matches")
+            for i, file in enumerate(st.session_state.unmatched_files):
+                match = st.session_state.get(f"match_{i}")
+                if match:
+                    log_debug(f"Adding manual match: {file} -> {match}")
+                    if 'matches' not in st.session_state:
+                        st.session_state.matches = {}
+                    st.session_state.matches[file] = match
+                    matches_made = True
+            
+            if matches_made:
+                log_debug("Manual matches processed successfully")
+                st.session_state.state = "cover_page_removal"
+                return True
+            else:
+                log_debug("No manual matches were made")
+                st.warning("Please make at least one match before continuing.")
+    
+    return False
+
 def main():
     st.set_page_config(
         page_title="Digital Marking App",
@@ -827,37 +912,12 @@ def main():
                 st.rerun()
             return
 
-        # If matching is complete, show only the success message and continue button
-        if st.session_state.get('matching_complete', False):
-            st.success("All files have been matched successfully!")
-            st.markdown('<div style="text-align: center; margin-top: 2rem;">', unsafe_allow_html=True)
-            if st.button("Continue to Cover Page Removal", type="primary", key="proceed_to_cover"):
-                st.session_state.current_step = 3
-                st.session_state.matching_complete = True  # Ensure this is set
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-            return
-
-        # Reset matching complete if starting new matching
-        if 'matching_started' not in st.session_state:
-            st.session_state.matching_complete = False
-            st.session_state.matching_started = True
-        
         # Canvas API Configuration
         assignment_url = st.text_input(
             "Paste Canvas Assignment URL",
             help="Example: https://canvas.parra.catholic.edu.au/courses/12345/assignments/67890"
         )
         
-        # Matching mode selection
-        st.markdown('<h4>Select Matching Method</h4>', unsafe_allow_html=True)
-        matching_mode = st.radio(
-            "Select how you want to match students with their files",
-            options=['name_and_number', 'name_only'],
-            format_func=lambda x: "Use both Name and NESA Number" if x == 'name_and_number' else "Use Name Only",
-            help="'Use both Name and NESA Number': Attempts to match using NESA number first, then falls back to name matching if needed.\n'Use Name Only': Only uses student names for matching."
-        )
-
         if assignment_url:
             # Extract base URL and IDs from assignment URL
             canvas_api_url, course_id, assignment_id = extract_course_assignment_ids(assignment_url)
@@ -879,211 +939,110 @@ def main():
             
             if st.button("Start Matching", type="primary"):
                 with st.spinner("Matching students..."):
-                    # Verify we have processing results
-                    if not st.session_state.processing_results:
-                        st.error("No processing results found. Please process files first.")
-                        return
-                    
                     # Perform matching using stored results
                     matches, unmatched = match_students_with_canvas(
                         st.session_state.processing_results,
                         students,
                         session_folder,
-                        matching_mode
+                        'name_only'  # Simplified to just use name matching
                     )
                     
                     # Store matches in session state
-                    st.session_state.matches = matches
+                    st.session_state.matches = matches if matches else []
+                    st.session_state.unmatched = unmatched if unmatched else []
+                    st.session_state.unmatched_students = students
+                    st.rerun()
+
+            # Show matching results if we have any
+            if st.session_state.get('matches') is not None:
+                st.markdown("### Matching Results")
+                
+                # Show automatic matches
+                if st.session_state.matches:
+                    with st.expander("View Automatic Matches", expanded=False):
+                        for match in st.session_state.matches:
+                            # Get the AI-processed name from the file info
+                            ai_processed_name = match['file_info'].get('student_name', '').replace('_', ' ')
+                            ai_processed_number = match['file_info'].get('student_number', '')
+                            ai_output = f"{ai_processed_number}_{ai_processed_name}"
+                            st.success(f"Matched {ai_output}.pdf → {match['canvas_student_name']}")
+
+                # Handle manual matching if needed
+                if st.session_state.get('unmatched'):
+                    st.write("### Manual Matching")
+                    st.write(f"{len(st.session_state.unmatched)} files need manual matching")
                     
-                    # Display results in a results section
-                    st.markdown('<div class="results-section">', unsafe_allow_html=True)
-                    st.write("### Matching Results")
-                    
-                    # Show matches first in a collapsible expander
-                    if matches:
-                        with st.expander("View Successful Matches", expanded=False):
-                            st.write("#### Successful Matches")
-                            for match in matches:
-                                # Get the AI-processed name from the file info
-                                ai_processed_name = match['file_info'].get('student_name', '').replace('_', ' ')
-                                ai_processed_number = match['file_info'].get('student_number', '')
-                                ai_output = f"{ai_processed_number}_{ai_processed_name}"
+                    with st.form("manual_matching"):
+                        manual_matches = {}
+                        
+                        for file_info in st.session_state.unmatched:
+                            st.write("---")  # Separator between files
+                            
+                            # Show PDF preview and matching controls side by side
+                            col1, col2 = st.columns([1, 1.5])
+                            
+                            with col1:
+                                pdf_path = os.path.join(session_folder, file_info['new_filename'])
+                                preview_bytes, _ = get_pdf_preview(pdf_path, page_num=0, top_third_only=True, zoom=2)
+                                if preview_bytes:
+                                    st.image(preview_bytes, use_column_width=True)
+                            
+                            with col2:
+                                st.write(f"**{file_info['new_filename']}**")
+                                if 'student_name' in file_info:
+                                    st.write(f"Detected Name: {file_info['student_name'].replace('_', ' ')}")
+                                if 'student_number' in file_info:
+                                    st.write(f"Detected Number: {file_info['student_number']}")
                                 
-                                st.success(
-                                    f"Matched {ai_output} → "
-                                    f"{match['canvas_student_name']} (ID: {match['canvas_student_id']}) "
-                                    f"[Score: {match['match_score']:.1f}%]"
+                                student_options = {f"{s.id}": f"{s.name} (ID: {s.id})" for s in st.session_state.unmatched_students}
+                                selected = st.selectbox(
+                                    "Select student",
+                                    options=[""] + list(student_options.keys()),
+                                    format_func=lambda x: "Select student..." if x == "" else student_options.get(x, x),
+                                    key=f"match_{file_info['new_filename']}"
                                 )
-                    
-                    # Handle unmatched files
-                    if unmatched:
-                        st.write("#### Manual Matching Required")
-                        st.write(f"Found {len(unmatched)} unmatched files that need manual matching.")
+                                if selected:
+                                    manual_matches[file_info['new_filename']] = selected
                         
-                        # Get list of unmatched students (excluding already matched ones)
-                        matched_student_ids = {match['canvas_student_id'] for match in matches}
-                        unmatched_students = [
-                            student for student in students 
-                            if student.id not in matched_student_ids
-                        ]
-                        
-                        # Store unmatched data in session state
-                        st.session_state.unmatched = unmatched
-                        st.session_state.unmatched_students = unmatched_students
-                        
-                        # Create a form for all manual matching
-                        with st.form(key="manual_matching_form", clear_on_submit=True):
-                            # Display unmatched files in a grid
-                            cols_per_row = 3
-                            selections = {}  # Store selections within form
+                        # Single form submit button at the end
+                        if st.form_submit_button("Apply Manual Matches"):
+                            # Process manual matches
+                            for filename, student_id in manual_matches.items():
+                                file_info = next(f for f in st.session_state.unmatched if f['new_filename'] == filename)
+                                student = next(s for s in st.session_state.unmatched_students if str(s.id) == student_id)
+                                
+                                # Rename file to just Canvas ID
+                                old_path = os.path.join(session_folder, filename)
+                                new_filename = f"{student.id}.pdf"  # Simplified filename
+                                new_path = os.path.join(session_folder, new_filename)
+                                
+                                try:
+                                    os.rename(old_path, new_path)
+                                    st.session_state.matches.append({
+                                        'file_info': file_info,
+                                        'canvas_student_id': student.id,
+                                        'canvas_student_name': student.name,
+                                        'match_score': 100
+                                    })
+                                except Exception as e:
+                                    st.error(f"Error matching {filename}: {str(e)}")
                             
-                            for i in range(0, len(unmatched), cols_per_row):
-                                cols = st.columns(cols_per_row)
-                                for j, col in enumerate(cols):
-                                    if i + j < len(unmatched):
-                                        file_info = unmatched[i + j]
-                                        with col:
-                                            # Get the AI-processed filename
-                                            filename = file_info.get('new_filename')
-                                            if not filename:
-                                                st.error(f"Missing processed filename for {file_info.get('original_filename', 'unknown file')}")
-                                                continue
-                                            
-                                            # Show PDF preview (top third only)
-                                            pdf_path = os.path.join(session_folder, filename)
-                                            preview_bytes, total_pages = get_pdf_preview(pdf_path, page_num=0, top_third_only=True)
-                                            if preview_bytes:
-                                                st.image(preview_bytes, use_column_width=True)
-                                            
-                                            # Show extracted name
-                                            ai_processed_name = file_info.get('student_name', '').replace('_', ' ')
-                                            ai_processed_number = file_info.get('student_number', '')
-                                            st.write(f"**{ai_processed_number}_{ai_processed_name}**")
-                                            
-                                            # Student selection dropdown
-                                            search_options = [
-                                                {'id': str(s.id), 'name': f"{s.name} (ID: {s.id})"} 
-                                                for s in unmatched_students
-                                            ]
-                                            selected = st.selectbox(
-                                                "Match with student",
-                                                options=[''] + [str(s.id) for s in unmatched_students],
-                                                format_func=lambda x: "Select student..." if x == '' else next(
-                                                    (s['name'] for s in search_options if s['id'] == x),
-                                                    "Unknown"
-                                                ),
-                                                key=f"form_match_{filename}"
-                                            )
-                                            
-                                            if selected:
-                                                selections[filename] = {
-                                                    'file_info': file_info,
-                                                    'selected_id': selected
-                                                }
-                            
-                            # Submit button at the bottom of the form
-                            submitted = st.form_submit_button("Apply Matches and Continue", type="primary")
-                            
-                            if submitted:
-                                st.write("DEBUG: Form submitted")
-                                matches_made = False
-                                
-                                # Process all selections made in the form
-                                st.write(f"DEBUG: Processing {len(selections)} selections")
-                                for filename, match_info in selections.items():
-                                    file_info = match_info['file_info']
-                                    selected_id = match_info['selected_id']
-                                    st.write(f"DEBUG: Processing match for {filename} with student ID {selected_id}")
-                                    student = next(s for s in unmatched_students if str(s.id) == selected_id)
-                                    
-                                    # Rename file to use Canvas user ID
-                                    old_path = os.path.join(session_folder, file_info['new_filename'])
-                                    new_filename = f"{student.id}.pdf"
-                                    new_path = os.path.join(session_folder, new_filename)
-                                    
-                                    try:
-                                        st.write(f"DEBUG: Renaming {old_path} to {new_path}")
-                                        os.rename(old_path, new_path)
-                                        file_info['new_filename'] = new_filename
-                                        matches.append({
-                                            'file_info': file_info,
-                                            'canvas_student_id': student.id,
-                                            'canvas_student_name': student.name,
-                                            'match_score': 100  # Manual match
-                                        })
-                                        matches_made = True
-                                        st.write(f"DEBUG: Successfully matched and renamed file")
-                                    except Exception as e:
-                                        st.error(f"Error renaming file: {str(e)}")
-                                
-                                # Force transition to step 3 regardless of matches_made
-                                st.write("DEBUG: Updating session state for transition")
-                                st.write(f"DEBUG: Current step before update: {st.session_state.current_step}")
-                                st.session_state.matched_files = matches
-                                st.session_state.matches = matches
-                                st.session_state.matching_complete = True
-                                st.session_state.current_step = 3
-                                st.write(f"DEBUG: Current step after update: {st.session_state.current_step}")
-                                
-                                # Clear all matching-related state
-                                st.write("DEBUG: Clearing matching state")
-                                st.session_state.pop('unmatched_pdfs', None)
-                                st.session_state.pop('unmatched_students', None)
-                                st.session_state.pop('unmatched', None)
-                                st.session_state.pop('matching_started', None)
-                                
-                                # Force rerun to step 3
-                                st.write("DEBUG: Forcing rerun to step 3")
-                                st.rerun()
-                    else:
-                        # If no unmatched files, just show success and continue
-                        st.success("All files matched successfully!")
-                        st.session_state.matched_files = matches
-                        st.session_state.matches = matches
-                        st.session_state.matching_complete = True
-                        st.session_state.current_step = 3
-                        st.session_state.unmatched_pdfs = []  # Clear unmatched files
-                        st.session_state.unmatched_students = {}  # Clear unmatched students
-                        st.rerun()
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
+                            # Update unmatched files
+                            matched_filenames = set(manual_matches.keys())
+                            st.session_state.unmatched = [
+                                f for f in st.session_state.unmatched 
+                                if f['new_filename'] not in matched_filenames
+                            ]
+                            st.rerun()
+
+                # Add continue button that will always work
+                if st.button("Continue to Cover Page Removal", type="primary"):
+                    st.session_state.current_step = 3
+                    st.session_state.matched_files = st.session_state.matches
+                    st.rerun()
 
     # Step 3: Cover Page Removal
     elif st.session_state.current_step == 3:
-        st.write("DEBUG: Entering Step 3")
-        st.write(f"DEBUG: Session state keys: {list(st.session_state.keys())}")
-        
-        # Force step 3 state
-        st.session_state.current_step = 3
-        st.session_state.matching_complete = True
-        
-        # Verify we have matched files
-        has_matches = bool(st.session_state.get('matches'))
-        has_matched_files = bool(st.session_state.get('matched_files'))
-        st.write(f"DEBUG: Has matches: {has_matches}, Has matched files: {has_matched_files}")
-        
-        if not has_matches and not has_matched_files:
-            st.error("No matched files found. Please complete the matching step first.")
-            if st.button("Return to Matching"):
-                st.session_state.current_step = 2
-                st.session_state.matching_complete = False
-                st.rerun()
-            return
-
-        # Use matches if available, otherwise use matched_files
-        if not st.session_state.matched_files and st.session_state.get('matches'):
-            st.write("DEBUG: Using matches from session state")
-            st.session_state.matched_files = st.session_state.matches
-
-        # Clear any remaining matching state
-        st.write("DEBUG: Clearing matching state variables")
-        for key in ['unmatched_pdfs', 'unmatched_students', 'unmatched', 'matching_started']:
-            if key in st.session_state:
-                st.write(f"DEBUG: Removing {key} from session state")
-                st.session_state.pop(key, None)
-
-        st.write("DEBUG: Ready to show cover page removal interface")
-        
         st.markdown('<div class="caption-container"><p class="caption">Remove Cover Pages<span class="wait-text">Select booklet size to remove cover pages...</span></p></div>', unsafe_allow_html=True)
         
         # Get session folder path
@@ -1093,15 +1052,27 @@ def main():
         preview_folder = os.path.join(UPLOAD_FOLDER, 'preview', st.session_state.timestamp)
         os.makedirs(preview_folder, exist_ok=True)
 
+        # Verify we have matched files
+        if not st.session_state.get('matches') and not st.session_state.get('matched_files'):
+            st.error("No matched files found. Please complete the matching step first.")
+            if st.button("Return to Matching"):
+                st.session_state.current_step = 2
+                st.rerun()
+            return
+
+        # Use matches if available, otherwise use matched_files
+        if not st.session_state.matched_files and st.session_state.get('matches'):
+            st.session_state.matched_files = st.session_state.matches
+
         # Booklet size selection
         col1, col2 = st.columns([3, 1])
         with col1:
             booklet_size = st.radio(
                 "Select Booklet Size",
-                options=['4', '8', '12', 'custom'],
-                format_func=lambda x: f"{x} pages" if x != 'custom' else "Custom size",
+                options=['no_removal', '4', '8', '12', 'custom'],
+                format_func=lambda x: "No cover pages to remove" if x == 'no_removal' else (f"{x} pages" if x != 'custom' else "Custom size"),
                 horizontal=True,
-                help="Select the number of pages in each exam booklet"
+                help="Select the number of pages in each exam booklet, or choose 'No cover pages to remove' to skip this step"
             )
         
         with col2:
@@ -1110,24 +1081,40 @@ def main():
 
         if st.button("Process Files", type="primary"):
             try:
-                booklet_size = int(booklet_size)
-                processed_files = []
-                
-                with st.spinner("Removing cover pages..."):
-                    # Process each PDF
-                    for filename in os.listdir(session_folder):
-                        if filename.endswith('.pdf'):
-                            input_path = os.path.join(session_folder, filename)
-                            output_path = os.path.join(preview_folder, filename)
-                            
-                            try:
-                                remove_cover_pages(input_path, output_path, booklet_size)
+                if booklet_size == 'no_removal':
+                    # Simply copy files without removing cover pages
+                    processed_files = []
+                    with st.spinner("Copying files..."):
+                        for filename in os.listdir(session_folder):
+                            if filename.endswith('.pdf'):
+                                input_path = os.path.join(session_folder, filename)
+                                output_path = os.path.join(preview_folder, filename)
+                                shutil.copy2(input_path, output_path)
                                 processed_files.append(filename)
-                            except Exception as e:
-                                st.error(f"Error processing {filename}: {str(e)}")
+                else:
+                    booklet_size = int(booklet_size)
+                    processed_files = []
+                    
+                    with st.spinner("Removing cover pages..."):
+                        # Process each PDF
+                        for filename in os.listdir(session_folder):
+                            if filename.endswith('.pdf'):
+                                input_path = os.path.join(session_folder, filename)
+                                output_path = os.path.join(preview_folder, filename)
+                                
+                                try:
+                                    remove_cover_pages(input_path, output_path, booklet_size)
+                                    processed_files.append(filename)
+                                except Exception as e:
+                                    st.error(f"Error processing {filename}: {str(e)}")
                 
                 if processed_files:
                     st.success(f"Successfully processed {len(processed_files)} files!")
+                    
+                    # Store processed state and files
+                    st.session_state.files_processed = True
+                    st.session_state.processed_pdfs = processed_files
+                    st.session_state.preview_folder = preview_folder
                     
                     # Create a zip file of all processed PDFs
                     zip_path = os.path.join(preview_folder, "processed_exams.zip")
@@ -1146,15 +1133,10 @@ def main():
                             key="download_all_zip"
                         )
                     
-                    # Show previews in a grid
-                    st.markdown("### Preview Processed Files")
+                    # Show summary of removed pages
+                    st.markdown("### Summary of Removed Pages")
                     
-                    # Initialize page numbers in session state if not exists
-                    for filename in processed_files:
-                        if f"current_page_{filename}" not in st.session_state:
-                            st.session_state[f"current_page_{filename}"] = 0
-                    
-                    # Display files in a grid
+                    # Create a 3-column grid for students
                     cols_per_row = 3
                     for i in range(0, len(processed_files), cols_per_row):
                         cols = st.columns(cols_per_row)
@@ -1162,47 +1144,75 @@ def main():
                             if i + j < len(processed_files):
                                 filename = processed_files[i + j]
                                 with col:
-                                    st.markdown(f"**{filename}**")
+                                    # Get original PDF page count
+                                    original_path = os.path.join(session_folder, filename)
+                                    processed_path = os.path.join(preview_folder, filename)
                                     
-                                    # Get current page number from session state
-                                    current_page = st.session_state[f"current_page_{filename}"]
+                                    with fitz.open(original_path) as original_doc:
+                                        original_pages = len(original_doc)
+                                    with fitz.open(processed_path) as processed_doc:
+                                        processed_pages = len(processed_doc)
                                     
-                                    # Get preview and total pages
-                                    pdf_path = os.path.join(preview_folder, filename)
-                                    preview_bytes, total_pages = get_pdf_preview(pdf_path, current_page)
+                                    # Calculate removed pages
+                                    removed_pages = get_cover_pages_to_remove(original_pages, booklet_size)
                                     
-                                    if preview_bytes:
-                                        st.image(preview_bytes, use_column_width=True)
-                                        
-                                        # Page navigation with unique keys
-                                        nav_cols = st.columns([1, 2, 1])
-                                        with nav_cols[0]:
-                                            prev_key = f"prev_{filename}_{current_page}"
-                                            if st.button("◀", key=prev_key, help="Previous page"):
-                                                new_page = (current_page - 1) if current_page > 0 else (total_pages - 1)
-                                                st.session_state[f"current_page_{filename}"] = new_page
-                                                st.rerun()
-                                        
-                                        with nav_cols[1]:
-                                            st.markdown(f"<div style='text-align: center'>Page {current_page + 1}/{total_pages}</div>", unsafe_allow_html=True)
-                                        
-                                        with nav_cols[2]:
-                                            next_key = f"next_{filename}_{current_page}"
-                                            if st.button("▶", key=next_key, help="Next page"):
-                                                new_page = (current_page + 1) if current_page < total_pages - 1 else 0
-                                                st.session_state[f"current_page_{filename}"] = new_page
-                                                st.rerun()
+                                    # Create student card with summary
+                                    st.markdown(f"""
+                                        <div style='padding: 1rem; border: 2px solid #76309B; border-radius: 12px; margin-bottom: 1rem; background: white; box-shadow: 0 2px 8px rgba(118,48,155,0.1);'>
+                                            <h4 style='color: #76309B; margin: 0 0 0.5rem 0; font-family: Montserrat, sans-serif; font-size: 0.9rem;'>{filename}</h4>
+                                            <div style='background: #f7f0fa; padding: 0.5rem; border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.8rem;'>
+                                                <p style='margin: 0.25rem 0;'><strong>Pages:</strong> {original_pages} → {processed_pages}</p>
+                                                <p style='margin: 0.25rem 0;'><strong>Removed:</strong> {', '.join(str(p + 1) for p in removed_pages)}</p>
+                                            </div>
+                                            <div style='background: #f7f0fa; padding: 0.5rem; border-radius: 8px; margin: 0.5rem 0;'>
+                                                <p style='text-align: center; margin: 0; color: #76309B; font-size: 0.8rem;'>
+                                                    Removed Pages Preview
+                                                </p>
+                                            </div>
+                                        </div>
+                                    """, unsafe_allow_html=True)
                                     
-                                    # Individual file download button
-                                    with open(pdf_path, "rb") as file:
+                                    # Process removed pages in pairs using Streamlit columns
+                                    sorted_pages = sorted(removed_pages)
+                                    for i in range(0, len(sorted_pages), 2):
+                                        preview_cols = st.columns(2)
+                                        for j, col in enumerate(preview_cols):
+                                            if i + j < len(sorted_pages):
+                                                page_num = sorted_pages[i + j]
+                                                preview_bytes, _ = get_pdf_preview(
+                                                    original_path, 
+                                                    page_num=page_num,
+                                                    top_third_only=False,
+                                                    zoom=3
+                                                )
+                                                if preview_bytes:
+                                                    with col:
+                                                        st.markdown(f"""
+                                                            <div style='border: 1px solid #76309B; border-radius: 4px; padding: 0.25rem; background: white;'>
+                                                                <p style='text-align: center; color: #76309B; margin: 0 0 0.25rem 0; font-size: 0.7rem;'>
+                                                                    Page {page_num + 1}
+                                                                </p>
+                                                            </div>
+                                                        """, unsafe_allow_html=True)
+                                                        st.image(preview_bytes, use_column_width=True)
+                                    
+                                    st.markdown("""
+                                        <div style='margin-top: 0.5rem;'>
+                                    """, unsafe_allow_html=True)
+                                    
+                                    # Add download button
+                                    with open(processed_path, "rb") as file:
                                         st.download_button(
-                                            label=f"📥 Download",
+                                            label="📥 Download",
                                             data=file,
                                             file_name=filename,
                                             mime="application/pdf",
-                                            key=f"download_{filename}"
+                                            key=f"download_{filename}",
+                                            use_container_width=True
                                         )
-                
+                                    
+                                    st.markdown("</div>", unsafe_allow_html=True)
+
             except ValueError:
                 st.error("Invalid booklet size. Please enter a valid number.")
             except Exception as e:
