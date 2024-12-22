@@ -246,19 +246,21 @@ def match_students_with_canvas(processed_files, canvas_students, matching_mode='
     Returns matched and unmatched files.
     """
     matches = []
-    unmatched = processed_files.copy()  # Start with all files as unmatched
+    unmatched = []  # Start with empty unmatched list and fill it
     
     # Create a dictionary of Canvas students for easy lookup
-    canvas_student_dict = {student.id: student.name for student in canvas_students}
+    canvas_student_dict = {student.id: student for student in canvas_students}
     
     # Process each file
     for file_info in processed_files:
-        if not file_info.get('success', False):  # Changed from if not file_info['success']
+        if not file_info.get('success', False):
+            unmatched.append(file_info)
             continue
             
         # Extract the student name and number from the filename
         filename_parts = file_info['new_filename'].split('_')
         if len(filename_parts) < 2:
+            unmatched.append(file_info)
             continue
         
         student_number = filename_parts[0]
@@ -282,12 +284,12 @@ def match_students_with_canvas(processed_files, canvas_students, matching_mode='
             # Convert student name to lowercase for comparison
             student_name_lower = student_name.lower()
             
-            for canvas_id, canvas_name in canvas_student_dict.items():
-                canvas_name_lower = canvas_name.lower()
+            for canvas_id, student in canvas_student_dict.items():
+                canvas_name_lower = student.name.lower()
                 
                 # Try exact match first
                 if student_name_lower == canvas_name_lower:
-                    best_match = (canvas_id, canvas_name)
+                    best_match = student
                     highest_score = 100
                     break
                 
@@ -296,18 +298,31 @@ def match_students_with_canvas(processed_files, canvas_students, matching_mode='
                 
                 if score > highest_score:
                     highest_score = score
-                    best_match = (canvas_id, canvas_name)
+                    best_match = student
             
             if best_match and highest_score >= 70:  # Threshold for accepting a match
-                canvas_id, canvas_name = best_match
-                matches.append({
-                    'file_info': file_info,
-                    'canvas_student_id': canvas_id,
-                    'canvas_student_name': canvas_name,
-                    'match_score': highest_score
-                })
-                unmatched.remove(file_info)  # Remove from unmatched list
-                matched = True
+                # Rename the file to use Canvas user ID
+                old_path = os.path.join(session_folder, file_info['new_filename'])
+                new_filename = f"{best_match.id}_{best_match.name.replace(' ', '_')}.pdf"
+                new_path = os.path.join(session_folder, new_filename)
+                
+                try:
+                    os.rename(old_path, new_path)
+                    file_info['new_filename'] = new_filename  # Update filename in file_info
+                    
+                    matches.append({
+                        'file_info': file_info,
+                        'canvas_student_id': best_match.id,
+                        'canvas_student_name': best_match.name,
+                        'match_score': highest_score
+                    })
+                    matched = True
+                except Exception as e:
+                    st.error(f"Error renaming file: {str(e)}")
+                    unmatched.append(file_info)
+        
+        if not matched:
+            unmatched.append(file_info)
     
     return matches, unmatched
 
@@ -996,16 +1011,20 @@ def main():
                                         st.image(preview_bytes, use_column_width=True)
                                         
                                         # Page navigation
-                                        col1, col2, col3 = st.columns([1, 2, 1])
-                                        with col1:
-                                            if st.button("◀", key=f"prev_{filename}", help="Previous page"):
+                                        nav_cols = st.columns([1, 2, 1])
+                                        with nav_cols[0]:
+                                            prev_key = f"prev_{filename}_{current_page}"  # Make key unique
+                                            if st.button("◀", key=prev_key):
                                                 new_page = (current_page - 1) if current_page > 0 else (total_pages - 1)
                                                 st.session_state[f"current_page_{filename}"] = new_page
                                                 st.rerun()
-                                        with col2:
+                                        
+                                        with nav_cols[1]:
                                             st.markdown(f"<div style='text-align: center'>Page {current_page + 1}/{total_pages}</div>", unsafe_allow_html=True)
-                                        with col3:
-                                            if st.button("▶", key=f"next_{filename}", help="Next page"):
+                                        
+                                        with nav_cols[2]:
+                                            next_key = f"next_{filename}_{current_page}"  # Make key unique
+                                            if st.button("▶", key=next_key):
                                                 new_page = (current_page + 1) if current_page < total_pages - 1 else 0
                                                 st.session_state[f"current_page_{filename}"] = new_page
                                                 st.rerun()
