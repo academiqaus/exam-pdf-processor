@@ -830,24 +830,33 @@ def main():
                         
                         if not any(f.get('success', False) for f in unmatched):
                             st.success("All files have been matched!")
-                            if st.button("Continue to Cover Page Removal"):
-                                st.session_state.current_step = 3
-                                st.session_state.should_rerun = True
-                                st.rerun()
+                            # Store results in session state
+                            st.session_state.matching_results = {
+                                'matches': matches,
+                                'unmatched': []
+                            }
+                            col1, col2, col3 = st.columns([1, 2, 1])
+                            with col2:
+                                if st.button("Continue to Cover Page Removal", key="continue_to_cover"):
+                                    st.session_state.current_step = 3
+                                    st.rerun()
                     else:
                         st.success("All files matched successfully!")
-                        if st.button("Continue to Cover Page Removal"):
-                            st.session_state.current_step = 3
-                            st.session_state.should_rerun = True
-                            st.rerun()
+                        # Store results in session state
+                        st.session_state.matching_results = {
+                            'matches': matches,
+                            'unmatched': []
+                        }
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        with col2:
+                            if st.button("Continue to Cover Page Removal", key="continue_to_cover_auto"):
+                                st.session_state.current_step = 3
+                                st.rerun()
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
     # Step 3: Cover Page Removal
     elif st.session_state.current_step == 3:
-        if st.session_state.get('should_rerun', False):
-            st.session_state.should_rerun = False  # Reset the flag
-            
         st.markdown('<div class="caption-container"><p class="caption">Remove Cover Pages<span class="wait-text">Select booklet size to remove cover pages...</span></p></div>', unsafe_allow_html=True)
         
         # Get session folder path
