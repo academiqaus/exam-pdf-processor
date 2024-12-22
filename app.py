@@ -853,19 +853,19 @@ def main():
                     st.markdown('<div class="results-section">', unsafe_allow_html=True)
                     st.write("### Matching Results")
                     
-                    # Show matches
+                    # Show matches first
                     if matches:
-                        with st.expander("View Successful Matches", expanded=False):
-                            for match in matches:
-                                st.success(
-                                    f"Matched {match['file_info']['new_filename']} → "
-                                    f"{match['canvas_student_name']} (Score: {match['match_score']}%)"
-                                )
+                        st.write("#### Successful Matches")
+                        for match in matches:
+                            st.success(
+                                f"Matched {match['file_info']['original_filename']} → "
+                                f"{match['canvas_student_name']} (Score: {match['match_score']:.1f}%)"
+                            )
                     
                     # Handle unmatched files
                     if unmatched:
                         st.write("#### Manual Matching Required")
-                        st.write("#### Unmatched Files")
+                        st.write(f"Found {len(unmatched)} unmatched files that need manual matching.")
                         
                         # Get list of unmatched students (excluding already matched ones)
                         matched_student_ids = {match['canvas_student_id'] for match in matches}
@@ -876,8 +876,6 @@ def main():
                         
                         # Display unmatched files in a grid
                         cols_per_row = 3
-                        unmatched_files = [f for f in unmatched if not f.get('success', False)]
-                        
                         for i in range(0, len(unmatched), cols_per_row):
                             cols = st.columns(cols_per_row)
                             for j, col in enumerate(cols):
@@ -925,8 +923,15 @@ def main():
                                                 st.rerun()
                                             except Exception as e:
                                                 st.error(f"Error renaming file: {str(e)}")
-                    
-                    if not unmatched:
+                        
+                        # Show continue button only if there are no unmatched files
+                        if not unmatched:
+                            st.success("All files have been matched!")
+                            st.session_state.matched_files = matches
+                            st.session_state.matches = matches
+                            st.session_state.matching_complete = True
+                            st.rerun()
+                    else:
                         st.success("All files matched successfully!")
                         st.session_state.matched_files = matches
                         st.session_state.matches = matches
