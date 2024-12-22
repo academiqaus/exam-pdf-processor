@@ -153,6 +153,9 @@ def process_files_with_openai(files, session_folder, api_key):
     if client is None:
         client = OpenAI(api_key=api_key)
     
+    # Ensure duplicate folder exists
+    os.makedirs(DUPLICATE_FOLDER, exist_ok=True)
+    
     processed_results = []
     with ThreadPoolExecutor(max_workers=5) as executor:
         future_to_file = {
@@ -178,24 +181,33 @@ def process_files_with_openai(files, session_folder, api_key):
                 duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
                 
                 count = 1
+                base_filename = new_filename.replace('.pdf', '')
                 while os.path.exists(new_path) or os.path.exists(duplicate_path):
-                    new_filename = f"{student_number}_{student_name}_{count}.pdf"
+                    new_filename = f"{base_filename}_{count}.pdf"
                     new_path = os.path.join(session_folder, new_filename)
                     duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
                     count += 1
 
-                # Rename and copy
-                os.rename(old_path, new_path)
-                shutil.copy2(new_path, duplicate_path)
-                
-                processed_results.append({
-                    'original_filename': filename,
-                    'new_filename': new_filename,
-                    'extracted_text': extracted_text,
-                    'success': True,
-                    'student_number': student_number,
-                    'student_name': student_name
-                })
+                try:
+                    # First copy to duplicate folder, then rename original
+                    shutil.copy2(old_path, duplicate_path)
+                    os.rename(old_path, new_path)
+                    
+                    processed_results.append({
+                        'original_filename': filename,
+                        'new_filename': new_filename,
+                        'extracted_text': extracted_text,
+                        'success': True,
+                        'student_number': student_number,
+                        'student_name': student_name
+                    })
+                except Exception as e:
+                    st.error(f"Error handling file {filename}: {str(e)}")
+                    processed_results.append({
+                        'original_filename': filename,
+                        'error': str(e),
+                        'success': False
+                    })
                 
             except Exception as e:
                 processed_results.append({
@@ -757,37 +769,40 @@ def main():
                 # Process button
                 if st.button("Process Files", type="primary"):
                     with st.spinner("Processing with AcademIQ..."):
-                        # Use environment variable for API key
-                        api_key = st.secrets["OPENAI_API_KEY"]
-                        global client
-                        client = OpenAI(api_key=api_key)
-                        
-                        session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
-                        results = process_files_with_openai(
-                            st.session_state.processed_files,
-                            session_folder,
-                            api_key
-                        )
-                        
-                        # Display results and store in session state
-                        st.write("### Processing Results")
-                        success_count = 0
-                        for result in results:
-                            if result['success']:
-                                success_count += 1
-                                st.success(f"Processed {result['original_filename']} → {result['new_filename']}")
-                                with st.expander("Show extracted text"):
-                                    st.text(result['extracted_text'])
+                        try:
+                            # Use environment variable for API key
+                            api_key = st.secrets["OPENAI_API_KEY"]
+                            global client
+                            client = OpenAI(api_key=api_key)
+                            
+                            session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
+                            results = process_files_with_openai(
+                                st.session_state.processed_files,
+                                session_folder,
+                                api_key
+                            )
+                            
+                            # Display results and store in session state
+                            st.write("### Processing Results")
+                            success_count = 0
+                            for result in results:
+                                if result['success']:
+                                    success_count += 1
+                                    st.success(f"Processed {result['original_filename']} → {result['new_filename']}")
+                                    with st.expander("Show extracted text"):
+                                        st.text(result['extracted_text'])
+                                else:
+                                    st.error(f"Failed to process {result['original_filename']}: {result['error']}")
+                            
+                            if success_count > 0:
+                                st.session_state.processing_complete = True
+                                st.session_state.processing_results = results
+                                st.session_state.current_step = 2
+                                st.rerun()
                             else:
-                                st.error(f"Failed to process {result['original_filename']}: {result['error']}")
-                        
-                        if success_count > 0:
-                            st.session_state.processing_complete = True
-                            st.session_state.processing_results = results
-                            st.session_state.current_step = 2
-                            st.rerun()
-                        else:
-                            st.error("No files were successfully processed. Please try again.")
+                                st.error("No files were successfully processed. Please try again.")
+                        except Exception as e:
+                            st.error(f"An error occurred during processing: {str(e)}")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
