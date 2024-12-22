@@ -18,6 +18,7 @@ from canvasapi import Canvas
 import difflib
 import atexit
 import zipfile
+from tenacity import retry, wait_exponential, stop_after_attempt
 
 # Configure logging
 logging.basicConfig(
@@ -100,6 +101,7 @@ def extract_top_third_as_png(pdf_path, zoom=2):
     return png_path
 
 # Process a single PDF with OpenAI
+@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3))
 def process_pdf_with_ai(pdf_path, max_retries=3):
     global client
     try:
@@ -116,31 +118,31 @@ def process_pdf_with_ai(pdf_path, max_retries=3):
             ]}
         ]
 
-        for attempt in range(max_retries):
-            try:
-                response = client.chat.completions.create(
-                    model=MODEL,
-                    messages=messages,
-                    max_tokens=300,
-                    temperature=0.0,
-                )
-                extracted_text = response.choices[0].message.content
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                max_tokens=300,
+                temperature=0.0,
+            )
+            extracted_text = response.choices[0].message.content
 
-                # Extract student info
-                student_number_match = re.search(r"NUMBER: (\d+)", extracted_text)
-                student_name_match = re.search(r"NAME: (.+)", extracted_text)
+            # Extract student info
+            student_number_match = re.search(r"NUMBER: (\d+)", extracted_text)
+            student_name_match = re.search(r"NAME: (.+)", extracted_text)
 
-                student_number = student_number_match.group(1) if student_number_match else "UnknownNumber"
-                student_name = student_name_match.group(1).strip() if student_name_match else "UnknownName"
-                sanitized_student_name = student_name.replace(" ", "_")
+            student_number = student_number_match.group(1) if student_number_match else "UnknownNumber"
+            student_name = student_name_match.group(1).strip() if student_name_match else "UnknownName"
+            sanitized_student_name = student_name.replace(" ", "_")
 
-                os.remove(png_path)  # Clean up PNG
-                return student_number, sanitized_student_name, extracted_text
+            os.remove(png_path)  # Clean up PNG
+            return student_number, sanitized_student_name, extracted_text
 
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise e
-                continue
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
+            if os.path.exists(png_path):
+                os.remove(png_path)
+            raise e
 
     except Exception as e:
         if os.path.exists(png_path):
@@ -154,57 +156,52 @@ def process_files_with_openai(files, session_folder, api_key):
         client = OpenAI(api_key=api_key)
     
     processed_results = []
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_file = {
-            executor.submit(process_pdf_with_ai, 
-                          os.path.join(session_folder, filename)): filename 
-            for filename in files
-        }
-        
-        # Create a progress bar
-        progress_bar = st.progress(0)
-        total_files = len(files)
-        completed = 0
-        
-        for future in as_completed(future_to_file):
-            filename = future_to_file[future]
-            try:
-                student_number, student_name, extracted_text = future.result()
-                new_filename = f"{student_number}_{student_name}.pdf"
-                
-                # Handle duplicates
-                old_path = os.path.join(session_folder, filename)
+    
+    # Process files sequentially instead of in parallel to avoid rate limits
+    progress_bar = st.progress(0)
+    total_files = len(files)
+    
+    for idx, filename in enumerate(files, 1):
+        try:
+            pdf_path = os.path.join(session_folder, filename)
+            student_number, student_name, extracted_text = process_pdf_with_ai(pdf_path)
+            new_filename = f"{student_number}_{student_name}.pdf"
+            
+            # Handle duplicates
+            old_path = os.path.join(session_folder, filename)
+            new_path = os.path.join(session_folder, new_filename)
+            duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
+            
+            count = 1
+            while os.path.exists(new_path) or os.path.exists(duplicate_path):
+                new_filename = f"{student_number}_{student_name}_{count}.pdf"
                 new_path = os.path.join(session_folder, new_filename)
                 duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
-                
-                count = 1
-                while os.path.exists(new_path) or os.path.exists(duplicate_path):
-                    new_filename = f"{student_number}_{student_name}_{count}.pdf"
-                    new_path = os.path.join(session_folder, new_filename)
-                    duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
-                    count += 1
+                count += 1
 
-                # Rename and copy
-                os.rename(old_path, new_path)
-                shutil.copy2(new_path, duplicate_path)
-                
-                processed_results.append({
-                    'original_filename': filename,
-                    'new_filename': new_filename,
-                    'extracted_text': extracted_text,
-                    'success': True
-                })
-                
-            except Exception as e:
-                processed_results.append({
-                    'original_filename': filename,
-                    'error': str(e),
-                    'success': False
-                })
+            # Rename and copy
+            os.rename(old_path, new_path)
+            shutil.copy2(new_path, duplicate_path)
             
-            # Update progress
-            completed += 1
-            progress_bar.progress(completed / total_files)
+            processed_results.append({
+                'original_filename': filename,
+                'new_filename': new_filename,
+                'extracted_text': extracted_text,
+                'success': True
+            })
+            
+            # Add a small delay between files
+            time.sleep(1)
+            
+        except Exception as e:
+            processed_results.append({
+                'original_filename': filename,
+                'error': str(e),
+                'success': False
+            })
+        
+        # Update progress
+        progress_bar.progress(idx / total_files)
     
     return processed_results
 
