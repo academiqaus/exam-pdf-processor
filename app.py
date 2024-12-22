@@ -1011,17 +1011,20 @@ def main():
                                     except Exception as e:
                                         st.error(f"Error renaming file: {str(e)}")
                                 
-                                if matches_made:
-                                    # Update session state and proceed
-                                    st.session_state.matched_files = matches
-                                    st.session_state.matches = matches
-                                    st.session_state.matching_complete = True
-                                    st.session_state.current_step = 3
-                                    st.session_state.unmatched_pdfs = []  # Clear unmatched files
-                                    st.session_state.unmatched_students = {}  # Clear unmatched students
-                                    st.rerun()
-                                else:
-                                    st.warning("No matches were selected. Please select at least one match before continuing.")
+                                # Force transition to step 3 regardless of matches_made
+                                st.session_state.matched_files = matches
+                                st.session_state.matches = matches
+                                st.session_state.matching_complete = True
+                                st.session_state.current_step = 3
+                                
+                                # Clear all matching-related state
+                                st.session_state.pop('unmatched_pdfs', None)
+                                st.session_state.pop('unmatched_students', None)
+                                st.session_state.pop('unmatched', None)
+                                st.session_state.pop('matching_started', None)
+                                
+                                # Force rerun to step 3
+                                st.rerun()
                     else:
                         # If no unmatched files, just show success and continue
                         st.success("All files matched successfully!")
@@ -1037,6 +1040,10 @@ def main():
 
     # Step 3: Cover Page Removal
     elif st.session_state.current_step == 3:
+        # Force step 3 state
+        st.session_state.current_step = 3
+        st.session_state.matching_complete = True
+        
         # Verify we have matched files
         if not st.session_state.get('matches') and not st.session_state.get('matched_files'):
             st.error("No matched files found. Please complete the matching step first.")
@@ -1054,6 +1061,7 @@ def main():
         st.session_state.pop('unmatched_pdfs', None)
         st.session_state.pop('unmatched_students', None)
         st.session_state.pop('unmatched', None)
+        st.session_state.pop('matching_started', None)
 
         st.markdown('<div class="caption-container"><p class="caption">Remove Cover Pages<span class="wait-text">Select booklet size to remove cover pages...</span></p></div>', unsafe_allow_html=True)
         
