@@ -315,24 +315,21 @@ def match_students_with_canvas(processed_files, canvas_students, matching_mode='
     
     return matches, unmatched
 
-def get_pdf_preview(pdf_path):
-    """Generate a preview image of the top third of the first page of a PDF"""
+def get_pdf_preview(pdf_path, page_num=0):
+    """Generate a preview image of a specific page in a PDF"""
     try:
-        # Extract top third as PNG
         doc = fitz.open(pdf_path)
-        page = doc.load_page(0)
-        rect = page.rect
-        top_third = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1 / 3)
-        mat = fitz.Matrix(2, 2)  # 2x zoom for better quality
-        pix = page.get_pixmap(matrix=mat, clip=top_third)
-        
-        # Convert to bytes
+        total_pages = len(doc)
+        if page_num >= total_pages:
+            page_num = 0
+        page = doc.load_page(page_num)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better quality
         img_bytes = pix.tobytes("png")
         doc.close()
-        return img_bytes
+        return img_bytes, total_pages
     except Exception as e:
         st.error(f"Error generating preview: {str(e)}")
-        return None
+        return None, 0
 
 def get_cover_pages_to_remove(total_pages, booklet_size):
     """Calculate which cover pages should be removed based on booklet size and total pages"""
@@ -370,19 +367,6 @@ def remove_cover_pages(input_path, output_path, booklet_size):
             
     except Exception as e:
         raise Exception(f"Error processing {os.path.basename(input_path)}: {str(e)}")
-
-def get_pdf_preview(pdf_path, page_num=0):
-    """Generate a preview image of a specific page in a PDF"""
-    try:
-        doc = fitz.open(pdf_path)
-        page = doc.load_page(page_num)
-        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better quality
-        img_bytes = pix.tobytes("png")
-        doc.close()
-        return img_bytes
-    except Exception as e:
-        st.error(f"Error generating preview: {str(e)}")
-        return None
 
 # Add brand styling
 def local_css():
@@ -965,39 +949,73 @@ def main():
                 if processed_files:
                     st.success(f"Successfully processed {len(processed_files)} files!")
                     
-                    # Show previews
-                    st.markdown("### Preview Processed Files")
-                    for filename in processed_files:
-                        with st.expander(f"Preview: {filename}"):
-                            pdf_path = os.path.join(preview_folder, filename)
-                            preview_bytes = get_pdf_preview(pdf_path)
-                            if preview_bytes:
-                                st.image(preview_bytes, caption=f"First page of {filename}")
-                            
-                            # Add download button for each file
-                            with open(pdf_path, "rb") as file:
-                                st.download_button(
-                                    label=f"Download {filename}",
-                                    data=file,
-                                    file_name=filename,
-                                    mime="application/pdf"
-                                )
+                    # Create a zip file of all processed PDFs
+                    zip_path = os.path.join(preview_folder, "processed_exams.zip")
+                    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                        for filename in processed_files:
+                            file_path = os.path.join(preview_folder, filename)
+                            zip_file.write(file_path, filename)
                     
-                    # Add button to download all files as zip
-                    if st.button("Download All Files"):
-                        zip_buffer = io.BytesIO()
-                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                            for filename in processed_files:
-                                file_path = os.path.join(preview_folder, filename)
-                                zip_file.write(file_path, filename)
-                        
-                        zip_buffer.seek(0)
+                    # Add download button for zip file
+                    with open(zip_path, "rb") as zip_file:
                         st.download_button(
-                            label="Download All as ZIP",
-                            data=zip_buffer,
+                            label="📥 Download All Files (ZIP)",
+                            data=zip_file,
                             file_name="processed_exams.zip",
-                            mime="application/zip"
+                            mime="application/zip",
+                            key="download_all_zip"
                         )
+                    
+                    # Show previews in a grid
+                    st.markdown("### Preview Processed Files")
+                    
+                    # Initialize page numbers in session state if not exists
+                    for filename in processed_files:
+                        if f"current_page_{filename}" not in st.session_state:
+                            st.session_state[f"current_page_{filename}"] = 0
+                    
+                    # Display files in a grid
+                    cols_per_row = 3
+                    for i in range(0, len(processed_files), cols_per_row):
+                        cols = st.columns(cols_per_row)
+                        for j, col in enumerate(cols):
+                            if i + j < len(processed_files):
+                                filename = processed_files[i + j]
+                                with col:
+                                    st.markdown(f"**{filename}**")
+                                    
+                                    # Get current page number from session state
+                                    current_page = st.session_state[f"current_page_{filename}"]
+                                    
+                                    # Get preview and total pages
+                                    pdf_path = os.path.join(preview_folder, filename)
+                                    preview_bytes, total_pages = get_pdf_preview(pdf_path, current_page)
+                                    
+                                    if preview_bytes:
+                                        st.image(preview_bytes, use_column_width=True)
+                                        
+                                        # Page navigation
+                                        col1, col2, col3 = st.columns([1, 2, 1])
+                                        with col1:
+                                            if st.button("◀", key=f"prev_{filename}"):
+                                                st.session_state[f"current_page_{filename}"] = (current_page - 1) % total_pages
+                                                st.experimental_rerun()
+                                        with col2:
+                                            st.markdown(f"<div style='text-align: center'>Page {current_page + 1}/{total_pages}</div>", unsafe_allow_html=True)
+                                        with col3:
+                                            if st.button("▶", key=f"next_{filename}"):
+                                                st.session_state[f"current_page_{filename}"] = (current_page + 1) % total_pages
+                                                st.experimental_rerun()
+                                    
+                                    # Individual file download button
+                                    with open(pdf_path, "rb") as file:
+                                        st.download_button(
+                                            label=f"📥 Download",
+                                            data=file,
+                                            file_name=filename,
+                                            mime="application/pdf",
+                                            key=f"download_{filename}"
+                                        )
                 
             except ValueError:
                 st.error("Invalid booklet size. Please enter a valid number.")
