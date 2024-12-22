@@ -826,37 +826,39 @@ def main():
                         st.write("#### Unmatched Files")
                         
                         # Process unmatched files...
-                        # (existing unmatched files processing code)
-                        
                         if not any(f.get('success', False) for f in unmatched):
                             st.success("All files have been matched!")
                             # Store results in session state
-                            st.session_state.matching_results = {
-                                'matches': matches,
-                                'unmatched': []
-                            }
+                            st.session_state.matched_files = matches
                             col1, col2, col3 = st.columns([1, 2, 1])
                             with col2:
                                 if st.button("Continue to Cover Page Removal", key="continue_to_cover"):
                                     st.session_state.current_step = 3
-                                    st.rerun()
+                                    st.session_state.matched_files = matches  # Store matched files
+                                    st.experimental_rerun()  # Force a complete rerun
                     else:
                         st.success("All files matched successfully!")
                         # Store results in session state
-                        st.session_state.matching_results = {
-                            'matches': matches,
-                            'unmatched': []
-                        }
+                        st.session_state.matched_files = matches
                         col1, col2, col3 = st.columns([1, 2, 1])
                         with col2:
                             if st.button("Continue to Cover Page Removal", key="continue_to_cover_auto"):
                                 st.session_state.current_step = 3
-                                st.rerun()
+                                st.session_state.matched_files = matches  # Store matched files
+                                st.experimental_rerun()  # Force a complete rerun
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
     # Step 3: Cover Page Removal
     elif st.session_state.current_step == 3:
+        # Verify we have matched files
+        if 'matched_files' not in st.session_state:
+            st.error("No matched files found. Please complete the matching step first.")
+            if st.button("Return to Matching"):
+                st.session_state.current_step = 2
+                st.rerun()
+            return
+
         st.markdown('<div class="caption-container"><p class="caption">Remove Cover Pages<span class="wait-text">Select booklet size to remove cover pages...</span></p></div>', unsafe_allow_html=True)
         
         # Get session folder path
