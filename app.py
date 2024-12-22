@@ -374,15 +374,21 @@ def match_students_with_canvas(processed_files, canvas_students, session_folder,
     
     return matches, unmatched
 
-def get_pdf_preview(pdf_path, page_num=0):
-    """Generate a preview image of a specific page in a PDF"""
+def get_pdf_preview(pdf_path, page_num=0, top_third_only=False):
+    """Generate a preview image of a PDF page"""
     try:
         doc = fitz.open(pdf_path)
         total_pages = len(doc)
         if page_num >= total_pages:
             page_num = 0
         page = doc.load_page(page_num)
-        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better quality
+        rect = page.rect
+        
+        # If top_third_only, only show the top third of the page
+        if top_third_only:
+            rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1 / 3)
+            
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=rect)  # 2x zoom for better quality
         img_bytes = pix.tobytes("png")
         doc.close()
         return img_bytes, total_pages
@@ -895,7 +901,8 @@ def main():
                         for match in matches:
                             st.success(
                                 f"Matched {match['file_info']['original_filename']} → "
-                                f"{match['canvas_student_name']} (Score: {match['match_score']:.1f}%)"
+                                f"{match['canvas_student_name']} (ID: {match['canvas_student_id']}) "
+                                f"[Score: {match['match_score']:.1f}%]"
                             )
                     
                     # Handle unmatched files
@@ -924,16 +931,19 @@ def main():
                                             st.error(f"Missing processed filename for {file_info.get('original_filename', 'unknown file')}")
                                             continue
                                             
-                                        # Show PDF preview
+                                        # Show PDF preview (top third only for manual matching)
                                         pdf_path = os.path.join(session_folder, filename)
-                                        preview_bytes, total_pages = get_pdf_preview(pdf_path)
+                                        preview_bytes, total_pages = get_pdf_preview(pdf_path, page_num=0, top_third_only=True)
                                         if preview_bytes:
                                             st.image(preview_bytes, use_column_width=True)
                                         
                                         st.write(f"**{filename}**")
                                         
                                         # Student selection with searchable dropdown
-                                        search_options = [{'id': str(s.id), 'name': s.name} for s in unmatched_students]
+                                        search_options = [
+                                            {'id': str(s.id), 'name': f"{s.name} (ID: {s.id})"} 
+                                            for s in unmatched_students
+                                        ]
                                         selected = st.selectbox(
                                             "Match with student",
                                             options=[''] + [str(s.id) for s in unmatched_students],
@@ -947,9 +957,9 @@ def main():
                                         
                                         if selected:
                                             student = next(s for s in unmatched_students if str(s.id) == selected)
-                                            # Rename file to use Canvas ID
+                                            # Rename file to use Canvas user ID
                                             old_path = os.path.join(session_folder, filename)
-                                            new_filename = f"{student.id}_{student.name.replace(' ', '_')}.pdf"
+                                            new_filename = f"{student.id}.pdf"  # Just use Canvas ID for filename
                                             new_path = os.path.join(session_folder, new_filename)
                                             
                                             try:
@@ -962,6 +972,13 @@ def main():
                                                     'match_score': 100  # Manual match
                                                 })
                                                 unmatched.remove(file_info)
+                                                
+                                                # Update session state before rerun
+                                                st.session_state.matched_files = matches
+                                                st.session_state.matches = matches
+                                                if not unmatched:
+                                                    st.session_state.matching_complete = True
+                                                
                                                 st.rerun()
                                             except Exception as e:
                                                 st.error(f"Error renaming file: {str(e)}")
