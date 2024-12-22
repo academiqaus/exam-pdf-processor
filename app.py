@@ -770,6 +770,16 @@ def main():
                 st.rerun()
             return
 
+        # If matching is complete, show only the success message and continue button
+        if st.session_state.get('matching_complete', False):
+            st.success("All files have been matched successfully!")
+            st.markdown('<div style="text-align: center; margin-top: 2rem;">', unsafe_allow_html=True)
+            if st.button("Proceed to Cover Page Removal", type="primary", key="proceed_to_cover"):
+                st.session_state.current_step = 3
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+            return
+        
         # Canvas API Configuration with auto-update
         assignment_url = st.text_input(
             "Paste Canvas Assignment URL",
@@ -834,19 +844,15 @@ def main():
                         # Process unmatched files...
                         if not any(f.get('success', False) for f in unmatched):
                             st.success("All files have been matched!")
-                            # Store results and move to next step
+                            # Store results in session state
                             st.session_state.matched_files = matches
                             st.session_state.matching_complete = True
-                            st.session_state.current_step = 3
-                            time.sleep(1)  # Give user time to see success message
                             st.rerun()
                     else:
                         st.success("All files matched successfully!")
-                        # Store results and move to next step
+                        # Store results in session state
                         st.session_state.matched_files = matches
                         st.session_state.matching_complete = True
-                        st.session_state.current_step = 3
-                        time.sleep(1)  # Give user time to see success message
                         st.rerun()
                     
                     st.markdown('</div>', unsafe_allow_html=True)
@@ -858,6 +864,7 @@ def main():
             st.error("No matched files found. Please complete the matching step first.")
             if st.button("Return to Matching"):
                 st.session_state.current_step = 2
+                st.session_state.matching_complete = False
                 st.rerun()
             return
 
