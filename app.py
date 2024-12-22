@@ -841,8 +841,56 @@ def main():
                         st.write("#### Manual Matching Required")
                         st.write("#### Unmatched Files")
                         
-                        # Process unmatched files...
-                        if not any(f.get('success', False) for f in unmatched):
+                        # Get list of unmatched students (excluding already matched ones)
+                        matched_student_ids = {match['canvas_student_id'] for match in matches}
+                        unmatched_students = [
+                            student for student in students 
+                            if student.id not in matched_student_ids
+                        ]
+                        
+                        # Display unmatched files in a grid
+                        cols_per_row = 3
+                        unmatched_files = [f for f in unmatched if not f.get('success', False)]
+                        
+                        for i in range(0, len(unmatched_files), cols_per_row):
+                            cols = st.columns(cols_per_row)
+                            for j, col in enumerate(cols):
+                                if i + j < len(unmatched_files):
+                                    file_info = unmatched_files[i + j]
+                                    with col:
+                                        # Show PDF preview
+                                        pdf_path = os.path.join(session_folder, file_info['new_filename'])
+                                        preview_bytes = get_pdf_preview(pdf_path)
+                                        if preview_bytes:
+                                            st.image(preview_bytes, use_column_width=True)
+                                        
+                                        st.write(f"**{file_info['new_filename']}**")
+                                        
+                                        # Student selection with searchable dropdown
+                                        search_options = [{'id': str(s.id), 'name': s.name} for s in unmatched_students]
+                                        selected = st.selectbox(
+                                            "Match with student",
+                                            options=[''] + [str(s.id) for s in unmatched_students],
+                                            format_func=lambda x: "Type to search students..." if x == '' else next(
+                                                (s['name'] for s in search_options if s['id'] == x),
+                                                "Unknown"
+                                            ),
+                                            key=f"match_{file_info['new_filename']}",
+                                            help="Start typing to search for a student"
+                                        )
+                                        
+                                        if selected:
+                                            student = next(s for s in unmatched_students if str(s.id) == selected)
+                                            matches.append({
+                                                'file_info': file_info,
+                                                'canvas_student_id': student.id,
+                                                'canvas_student_name': student.name,
+                                                'match_score': 100  # Manual match
+                                            })
+                                            unmatched_files.remove(file_info)
+                                            st.experimental_rerun()
+                        
+                        if not unmatched_files:
                             st.success("All files have been matched!")
                             st.session_state.matched_files = matches
                             st.session_state.matches = matches
