@@ -915,7 +915,10 @@ def main():
                     if unmatched:
                         st.write("#### Manual Matching Required")
                         st.write(f"Found {len(unmatched)} unmatched files that need manual matching.")
-                        st.write("Please match all files before proceeding.")
+                        
+                        # Store unmatched files in session state if not already there
+                        if 'current_unmatched' not in st.session_state:
+                            st.session_state.current_unmatched = unmatched
                         
                         # Get list of unmatched students (excluding already matched ones)
                         matched_student_ids = {match['canvas_student_id'] for match in matches}
@@ -924,76 +927,104 @@ def main():
                             if student.id not in matched_student_ids
                         ]
                         
-                        # Display unmatched files in a grid
-                        cols_per_row = 3
-                        for i in range(0, len(unmatched), cols_per_row):
-                            cols = st.columns(cols_per_row)
-                            for j, col in enumerate(cols):
-                                if i + j < len(unmatched):
-                                    file_info = unmatched[i + j]
-                                    with col:
-                                        # Get the AI-processed filename
-                                        filename = file_info.get('new_filename')
-                                        if not filename:
-                                            st.error(f"Missing processed filename for {file_info.get('original_filename', 'unknown file')}")
-                                            continue
+                        # Create a form for manual matching
+                        with st.form(key='manual_matching_form'):
+                            st.write("Please match the following files:")
+                            
+                            # Track matches made in this form
+                            form_matches = []
+                            remaining_unmatched = []
+                            
+                            # Display unmatched files in a grid
+                            cols_per_row = 3
+                            for i in range(0, len(st.session_state.current_unmatched), cols_per_row):
+                                cols = st.columns(cols_per_row)
+                                for j, col in enumerate(cols):
+                                    if i + j < len(st.session_state.current_unmatched):
+                                        file_info = st.session_state.current_unmatched[i + j]
+                                        with col:
+                                            # Get the AI-processed filename
+                                            filename = file_info.get('new_filename')
+                                            if not filename:
+                                                st.error(f"Missing processed filename for {file_info.get('original_filename', 'unknown file')}")
+                                                continue
                                             
-                                        # Show PDF preview (top third only for manual matching)
-                                        pdf_path = os.path.join(session_folder, filename)
-                                        preview_bytes, total_pages = get_pdf_preview(pdf_path, page_num=0, top_third_only=True)
-                                        if preview_bytes:
-                                            st.image(preview_bytes, use_column_width=True)
-                                        
-                                        # Show the extracted name instead of "AI Output"
-                                        ai_processed_name = file_info.get('student_name', '').replace('_', ' ')
-                                        ai_processed_number = file_info.get('student_number', '')
-                                        st.write(f"**{ai_processed_number}_{ai_processed_name}**")
-                                        
-                                        # Student selection with searchable dropdown
-                                        search_options = [
-                                            {'id': str(s.id), 'name': f"{s.name} (ID: {s.id})"} 
-                                            for s in unmatched_students
-                                        ]
-                                        selected = st.selectbox(
-                                            "Match with student",
-                                            options=[''] + [str(s.id) for s in unmatched_students],
-                                            format_func=lambda x: "Type to search students..." if x == '' else next(
-                                                (s['name'] for s in search_options if s['id'] == x),
-                                                "Unknown"
-                                            ),
-                                            key=f"match_{filename}",
-                                            help="Start typing to search for a student"
-                                        )
-                                        
-                                        if selected:
-                                            student = next(s for s in unmatched_students if str(s.id) == selected)
-                                            # Rename file to use Canvas user ID
-                                            old_path = os.path.join(session_folder, filename)
-                                            new_filename = f"{student.id}.pdf"  # Just use Canvas ID for filename
-                                            new_path = os.path.join(session_folder, new_filename)
+                                            # Show PDF preview (top third only)
+                                            pdf_path = os.path.join(session_folder, filename)
+                                            preview_bytes, total_pages = get_pdf_preview(pdf_path, page_num=0, top_third_only=True)
+                                            if preview_bytes:
+                                                st.image(preview_bytes, use_column_width=True)
                                             
-                                            try:
-                                                os.rename(old_path, new_path)
-                                                file_info['new_filename'] = new_filename
-                                                matches.append({
-                                                    'file_info': file_info,
-                                                    'canvas_student_id': student.id,
-                                                    'canvas_student_name': student.name,
-                                                    'match_score': 100  # Manual match
-                                                })
-                                                unmatched.remove(file_info)
-                                                
-                                                # Update session state without rerunning
-                                                st.session_state.matched_files = matches
-                                                st.session_state.matches = matches
-                                                
-                                                # Only rerun if all files are matched
-                                                if not unmatched:
-                                                    st.session_state.matching_complete = True
-                                                    st.session_state.current_step = 3
-                                                    st.rerun()
-                                            except Exception as e:
-                                                st.error(f"Error renaming file: {str(e)}")
+                                            # Show extracted name
+                                            ai_processed_name = file_info.get('student_name', '').replace('_', ' ')
+                                            ai_processed_number = file_info.get('student_number', '')
+                                            st.write(f"**{ai_processed_number}_{ai_processed_name}**")
+                                            
+                                            # Student selection dropdown
+                                            search_options = [
+                                                {'id': str(s.id), 'name': f"{s.name} (ID: {s.id})"} 
+                                                for s in unmatched_students
+                                            ]
+                                            selected = st.selectbox(
+                                                "Match with student",
+                                                options=[''] + [str(s.id) for s in unmatched_students],
+                                                format_func=lambda x: "Select student..." if x == '' else next(
+                                                    (s['name'] for s in search_options if s['id'] == x),
+                                                    "Unknown"
+                                                ),
+                                                key=f"form_match_{filename}"
+                                            )
+                                            
+                                            if selected:
+                                                form_matches.append((file_info, selected))
+                                            else:
+                                                remaining_unmatched.append(file_info)
+                            
+                            # Submit button
+                            submit_button = st.form_submit_button("Apply Matches", type="primary")
+                            
+                            if submit_button:
+                                for file_info, selected_id in form_matches:
+                                    student = next(s for s in unmatched_students if str(s.id) == selected_id)
+                                    
+                                    # Rename file to use Canvas user ID
+                                    old_path = os.path.join(session_folder, file_info['new_filename'])
+                                    new_filename = f"{student.id}.pdf"
+                                    new_path = os.path.join(session_folder, new_filename)
+                                    
+                                    try:
+                                        os.rename(old_path, new_path)
+                                        file_info['new_filename'] = new_filename
+                                        matches.append({
+                                            'file_info': file_info,
+                                            'canvas_student_id': student.id,
+                                            'canvas_student_name': student.name,
+                                            'match_score': 100  # Manual match
+                                        })
+                                    except Exception as e:
+                                        st.error(f"Error renaming file: {str(e)}")
+                                        remaining_unmatched.append(file_info)
+                                
+                                # Update session state
+                                st.session_state.current_unmatched = remaining_unmatched
+                                st.session_state.matched_files = matches
+                                st.session_state.matches = matches
+                                
+                                # If all files are matched, proceed to next step
+                                if not remaining_unmatched:
+                                    st.session_state.matching_complete = True
+                                    st.session_state.current_step = 3
+                                    st.rerun()
+                                else:
+                                    st.warning(f"{len(remaining_unmatched)} files still need to be matched")
+                                    st.rerun()
+                        
+                        # Show continue button only if all files are matched
+                        if not st.session_state.current_unmatched:
+                            st.success("All files have been matched!")
+                            if st.button("Continue to Cover Page Removal", type="primary"):
+                                st.session_state.current_step = 3
+                                st.rerun()
                     
                     # Always show the continue button, but disable it if there are unmatched files
                     st.markdown("---")
