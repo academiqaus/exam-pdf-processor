@@ -246,7 +246,7 @@ def match_students_with_canvas(processed_files, canvas_students, session_folder,
     Returns matched and unmatched files.
     """
     matches = []
-    unmatched = []  # Start with empty unmatched list and fill it
+    unmatched = []
     
     # Create a dictionary of Canvas students for easy lookup
     canvas_student_dict = {student.id: student for student in canvas_students}
@@ -853,15 +853,15 @@ def main():
                         cols_per_row = 3
                         unmatched_files = [f for f in unmatched if not f.get('success', False)]
                         
-                        for i in range(0, len(unmatched_files), cols_per_row):
+                        for i in range(0, len(unmatched), cols_per_row):
                             cols = st.columns(cols_per_row)
                             for j, col in enumerate(cols):
-                                if i + j < len(unmatched_files):
-                                    file_info = unmatched_files[i + j]
+                                if i + j < len(unmatched):
+                                    file_info = unmatched[i + j]
                                     with col:
                                         # Show PDF preview
                                         pdf_path = os.path.join(session_folder, file_info['new_filename'])
-                                        preview_bytes = get_pdf_preview(pdf_path)
+                                        preview_bytes, total_pages = get_pdf_preview(pdf_path)
                                         if preview_bytes:
                                             st.image(preview_bytes, use_column_width=True)
                                         
@@ -882,27 +882,31 @@ def main():
                                         
                                         if selected:
                                             student = next(s for s in unmatched_students if str(s.id) == selected)
-                                            matches.append({
-                                                'file_info': file_info,
-                                                'canvas_student_id': student.id,
-                                                'canvas_student_name': student.name,
-                                                'match_score': 100  # Manual match
-                                            })
-                                            unmatched_files.remove(file_info)
-                                            st.experimental_rerun()
-                        
-                        if not unmatched_files:
-                            st.success("All files have been matched!")
-                            st.session_state.matched_files = matches
-                            st.session_state.matches = matches
-                            st.session_state.matching_complete = True
-                            st.experimental_rerun()
-                    else:
+                                            # Rename file to use Canvas ID
+                                            old_path = os.path.join(session_folder, file_info['new_filename'])
+                                            new_filename = f"{student.id}_{student.name.replace(' ', '_')}.pdf"
+                                            new_path = os.path.join(session_folder, new_filename)
+                                            
+                                            try:
+                                                os.rename(old_path, new_path)
+                                                file_info['new_filename'] = new_filename
+                                                matches.append({
+                                                    'file_info': file_info,
+                                                    'canvas_student_id': student.id,
+                                                    'canvas_student_name': student.name,
+                                                    'match_score': 100  # Manual match
+                                                })
+                                                unmatched.remove(file_info)
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"Error renaming file: {str(e)}")
+                    
+                    if not unmatched:
                         st.success("All files matched successfully!")
                         st.session_state.matched_files = matches
                         st.session_state.matches = matches
                         st.session_state.matching_complete = True
-                        st.experimental_rerun()
+                        st.rerun()
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -914,7 +918,7 @@ def main():
             if st.button("Return to Matching"):
                 st.session_state.current_step = 2
                 st.session_state.matching_complete = False
-                st.experimental_rerun()
+                st.rerun()
             return
 
         # Use matches if available, otherwise use matched_files
@@ -1011,11 +1015,11 @@ def main():
                                     if preview_bytes:
                                         st.image(preview_bytes, use_column_width=True)
                                         
-                                        # Page navigation
+                                        # Page navigation with unique keys
                                         nav_cols = st.columns([1, 2, 1])
                                         with nav_cols[0]:
-                                            prev_key = f"prev_{filename}_{current_page}"  # Make key unique
-                                            if st.button("◀", key=prev_key):
+                                            prev_key = f"prev_{filename}_{current_page}"
+                                            if st.button("◀", key=prev_key, help="Previous page"):
                                                 new_page = (current_page - 1) if current_page > 0 else (total_pages - 1)
                                                 st.session_state[f"current_page_{filename}"] = new_page
                                                 st.rerun()
@@ -1024,8 +1028,8 @@ def main():
                                             st.markdown(f"<div style='text-align: center'>Page {current_page + 1}/{total_pages}</div>", unsafe_allow_html=True)
                                         
                                         with nav_cols[2]:
-                                            next_key = f"next_{filename}_{current_page}"  # Make key unique
-                                            if st.button("▶", key=next_key):
+                                            next_key = f"next_{filename}_{current_page}"
+                                            if st.button("▶", key=next_key, help="Next page"):
                                                 new_page = (current_page + 1) if current_page < total_pages - 1 else 0
                                                 st.session_state[f"current_page_{filename}"] = new_page
                                                 st.rerun()
