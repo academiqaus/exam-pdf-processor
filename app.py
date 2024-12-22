@@ -1005,14 +1005,20 @@ def main():
                                         st.error(f"Error renaming file: {str(e)}")
                                 
                                 if matches_made:
-                                    # Update session state and proceed
+                                    # Force transition to step 3
                                     st.session_state.matched_files = matches
                                     st.session_state.matches = matches
                                     st.session_state.matching_complete = True
                                     st.session_state.current_step = 3
                                     st.session_state.unmatched_pdfs = []  # Clear unmatched files
                                     st.session_state.unmatched_students = {}  # Clear unmatched students
+                                    st.session_state.matching_started = False  # Reset matching started flag
+                                    # Clear all matching-related state
+                                    for key in list(st.session_state.keys()):
+                                        if key.startswith('form_match_') or key.startswith('manual_match_'):
+                                            st.session_state.pop(key, None)
                                     st.rerun()
+                                    return  # Exit immediately after rerun
                                 else:
                                     st.warning("No matches were selected. Please select at least one match before continuing.")
                     else:
@@ -1024,7 +1030,13 @@ def main():
                         st.session_state.current_step = 3
                         st.session_state.unmatched_pdfs = []  # Clear unmatched files
                         st.session_state.unmatched_students = {}  # Clear unmatched students
+                        st.session_state.matching_started = False  # Reset matching started flag
+                        # Clear all matching-related state
+                        for key in list(st.session_state.keys()):
+                            if key.startswith('form_match_') or key.startswith('manual_match_'):
+                                st.session_state.pop(key, None)
                         st.rerun()
+                        return  # Exit immediately after rerun
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
