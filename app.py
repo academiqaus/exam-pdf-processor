@@ -17,6 +17,7 @@ import re
 from canvasapi import Canvas
 import difflib
 import atexit
+import zipfile
 
 # Configure logging
 logging.basicConfig(
@@ -326,6 +327,56 @@ def get_pdf_preview(pdf_path):
         pix = page.get_pixmap(matrix=mat, clip=top_third)
         
         # Convert to bytes
+        img_bytes = pix.tobytes("png")
+        doc.close()
+        return img_bytes
+    except Exception as e:
+        st.error(f"Error generating preview: {str(e)}")
+        return None
+
+def get_cover_pages_to_remove(total_pages, booklet_size):
+    """Calculate which cover pages should be removed based on booklet size and total pages"""
+    pages_to_remove = []
+    
+    # Calculate how many booklets are combined
+    num_booklets = total_pages // booklet_size
+    
+    # For each booklet, add its first page (cover page) to the removal list
+    for i in range(num_booklets):
+        cover_page = i * booklet_size  # 0-based index
+        pages_to_remove.append(cover_page)
+    
+    return sorted(pages_to_remove)
+
+def remove_cover_pages(input_path, output_path, booklet_size):
+    """Remove cover pages from a PDF based on booklet size"""
+    try:
+        # Read PDF
+        reader = PyPDF2.PdfReader(input_path)
+        writer = PyPDF2.PdfWriter()
+        
+        # Get total pages and calculate cover pages to remove
+        total_pages = len(reader.pages)
+        pages_to_remove = get_cover_pages_to_remove(total_pages, booklet_size)
+        
+        # Add all pages except cover pages
+        for i in range(total_pages):
+            if i not in pages_to_remove:
+                writer.add_page(reader.pages[i])
+        
+        # Save processed PDF
+        with open(output_path, 'wb') as output_file:
+            writer.write(output_file)
+            
+    except Exception as e:
+        raise Exception(f"Error processing {os.path.basename(input_path)}: {str(e)}")
+
+def get_pdf_preview(pdf_path, page_num=0):
+    """Generate a preview image of a specific page in a PDF"""
+    try:
+        doc = fitz.open(pdf_path)
+        page = doc.load_page(page_num)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better quality
         img_bytes = pix.tobytes("png")
         doc.close()
         return img_bytes
@@ -697,6 +748,93 @@ def main():
                         st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
+
+    # Step 3: Cover Page Removal
+    elif st.session_state.current_step == 3:
+        st.markdown('<div class="caption-container"><p class="caption">Remove Cover Pages<span class="wait-text">Select booklet size to remove cover pages...</span></p></div>', unsafe_allow_html=True)
+        
+        # Get session folder path
+        session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
+        
+        # Create preview folder
+        preview_folder = os.path.join(UPLOAD_FOLDER, 'preview', st.session_state.timestamp)
+        os.makedirs(preview_folder, exist_ok=True)
+
+        # Booklet size selection
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            booklet_size = st.radio(
+                "Select Booklet Size",
+                options=['4', '6', '8', 'custom'],
+                format_func=lambda x: f"{x} pages" if x != 'custom' else "Custom size",
+                horizontal=True,
+                help="Select the number of pages in each exam booklet"
+            )
+        
+        with col2:
+            if booklet_size == 'custom':
+                custom_size = st.number_input("Enter custom size", min_value=2, value=4, help="Enter the number of pages in each exam booklet")
+                booklet_size = custom_size
+
+        if st.button("Process Files", type="primary"):
+            try:
+                booklet_size = int(booklet_size)
+                processed_files = []
+                
+                with st.spinner("Removing cover pages..."):
+                    # Process each PDF
+                    for filename in os.listdir(session_folder):
+                        if filename.endswith('.pdf'):
+                            input_path = os.path.join(session_folder, filename)
+                            output_path = os.path.join(preview_folder, filename)
+                            
+                            try:
+                                remove_cover_pages(input_path, output_path, booklet_size)
+                                processed_files.append(filename)
+                            except Exception as e:
+                                st.error(f"Error processing {filename}: {str(e)}")
+                
+                if processed_files:
+                    st.success(f"Successfully processed {len(processed_files)} files!")
+                    
+                    # Show previews
+                    st.markdown("### Preview Processed Files")
+                    for filename in processed_files:
+                        with st.expander(f"Preview: {filename}"):
+                            pdf_path = os.path.join(preview_folder, filename)
+                            preview_bytes = get_pdf_preview(pdf_path)
+                            if preview_bytes:
+                                st.image(preview_bytes, caption=f"First page of {filename}")
+                            
+                            # Add download button for each file
+                            with open(pdf_path, "rb") as file:
+                                st.download_button(
+                                    label=f"Download {filename}",
+                                    data=file,
+                                    file_name=filename,
+                                    mime="application/pdf"
+                                )
+                    
+                    # Add button to download all files as zip
+                    if st.button("Download All Files"):
+                        # Create zip file in memory
+                        zip_buffer = io.BytesIO()
+                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                            for filename in processed_files:
+                                file_path = os.path.join(preview_folder, filename)
+                                zip_file.write(file_path, filename)
+                        
+                        # Offer zip file for download
+                        zip_buffer.seek(0)
+                        st.download_button(
+                            label="Download All as ZIP",
+                            data=zip_buffer,
+                            file_name="processed_exams.zip",
+                            mime="application/zip"
+                        )
+                
+            except ValueError:
+                st.error("Invalid booklet size")
 
     # Step 3: Canvas Student Matching
     elif st.session_state.current_step == 3:
