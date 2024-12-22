@@ -963,8 +963,8 @@ def main():
                                             key=f"match_{filename}"
                                         )
                                         
+                                        # Just store the selection, no rerun
                                         if selected:
-                                            # Store the match in session state
                                             match_key = f"match_{filename}"
                                             st.session_state[match_key] = (file_info, selected)
                         
@@ -977,7 +977,6 @@ def main():
                             # Combined button for applying matches and continuing
                             if st.button("Apply Matches and Continue", type="primary"):
                                 matches_made = False
-                                remaining_unmatched = unmatched.copy()
                                 
                                 # Process all stored matches
                                 for file_info in unmatched:
@@ -1000,17 +999,19 @@ def main():
                                                 'canvas_student_name': student.name,
                                                 'match_score': 100  # Manual match
                                             })
-                                            remaining_unmatched.remove(file_info)
                                             matches_made = True
                                         except Exception as e:
                                             st.error(f"Error renaming file: {str(e)}")
                                 
-                                # Update session state and proceed
-                                st.session_state.matched_files = matches
-                                st.session_state.matches = matches
-                                st.session_state.matching_complete = True
-                                st.session_state.current_step = 3
-                                st.rerun()
+                                # Only proceed if at least one match was made
+                                if matches_made:
+                                    st.session_state.matched_files = matches
+                                    st.session_state.matches = matches
+                                    st.session_state.matching_complete = True
+                                    st.session_state.current_step = 3
+                                    st.rerun()
+                                else:
+                                    st.warning("No matches were selected. Please select at least one match before continuing.")
                     else:
                         # If no unmatched files, just show success and continue
                         st.success("All files matched successfully!")
