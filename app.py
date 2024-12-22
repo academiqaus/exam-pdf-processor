@@ -256,11 +256,18 @@ def match_students_with_canvas(processed_files, canvas_students, session_folder,
     
     # Process each file
     for file_info in processed_files:
+        # Skip failed processing results
         if not file_info.get('success', False):
             unmatched.append(file_info)
             continue
             
-        # Extract the student name and number from the filename
+        # Ensure we're using the AI-processed filename
+        if not file_info.get('new_filename'):
+            st.error(f"Missing processed filename for {file_info.get('original_filename', 'unknown file')}")
+            unmatched.append(file_info)
+            continue
+            
+        # Extract the student name and number from the AI-processed filename
         filename_parts = file_info['new_filename'].split('_')
         if len(filename_parts) < 2:
             unmatched.append(file_info)
@@ -882,10 +889,10 @@ def main():
                                 if i + j < len(unmatched):
                                     file_info = unmatched[i + j]
                                     with col:
-                                        # Get the filename (either new_filename or original_filename)
-                                        filename = file_info.get('new_filename', file_info.get('original_filename'))
+                                        # Get the AI-processed filename
+                                        filename = file_info.get('new_filename')
                                         if not filename:
-                                            st.error(f"Invalid file info: {file_info}")
+                                            st.error(f"Missing processed filename for {file_info.get('original_filename', 'unknown file')}")
                                             continue
                                             
                                         # Show PDF preview
@@ -920,10 +927,7 @@ def main():
                                                 os.rename(old_path, new_path)
                                                 file_info['new_filename'] = new_filename
                                                 matches.append({
-                                                    'file_info': {
-                                                        'original_filename': filename,
-                                                        'new_filename': new_filename
-                                                    },
+                                                    'file_info': file_info,
                                                     'canvas_student_id': student.id,
                                                     'canvas_student_name': student.name,
                                                     'match_score': 100  # Manual match
