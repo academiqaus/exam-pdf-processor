@@ -882,13 +882,19 @@ def main():
                                 if i + j < len(unmatched):
                                     file_info = unmatched[i + j]
                                     with col:
+                                        # Get the filename (either new_filename or original_filename)
+                                        filename = file_info.get('new_filename', file_info.get('original_filename'))
+                                        if not filename:
+                                            st.error(f"Invalid file info: {file_info}")
+                                            continue
+                                            
                                         # Show PDF preview
-                                        pdf_path = os.path.join(session_folder, file_info['new_filename'])
+                                        pdf_path = os.path.join(session_folder, filename)
                                         preview_bytes, total_pages = get_pdf_preview(pdf_path)
                                         if preview_bytes:
                                             st.image(preview_bytes, use_column_width=True)
                                         
-                                        st.write(f"**{file_info['new_filename']}**")
+                                        st.write(f"**{filename}**")
                                         
                                         # Student selection with searchable dropdown
                                         search_options = [{'id': str(s.id), 'name': s.name} for s in unmatched_students]
@@ -899,14 +905,14 @@ def main():
                                                 (s['name'] for s in search_options if s['id'] == x),
                                                 "Unknown"
                                             ),
-                                            key=f"match_{file_info['new_filename']}",
+                                            key=f"match_{filename}",
                                             help="Start typing to search for a student"
                                         )
                                         
                                         if selected:
                                             student = next(s for s in unmatched_students if str(s.id) == selected)
                                             # Rename file to use Canvas ID
-                                            old_path = os.path.join(session_folder, file_info['new_filename'])
+                                            old_path = os.path.join(session_folder, filename)
                                             new_filename = f"{student.id}_{student.name.replace(' ', '_')}.pdf"
                                             new_path = os.path.join(session_folder, new_filename)
                                             
@@ -914,7 +920,10 @@ def main():
                                                 os.rename(old_path, new_path)
                                                 file_info['new_filename'] = new_filename
                                                 matches.append({
-                                                    'file_info': file_info,
+                                                    'file_info': {
+                                                        'original_filename': filename,
+                                                        'new_filename': new_filename
+                                                    },
                                                     'canvas_student_id': student.id,
                                                     'canvas_student_name': student.name,
                                                     'match_score': 100  # Manual match
