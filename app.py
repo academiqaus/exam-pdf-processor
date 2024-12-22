@@ -192,7 +192,9 @@ def process_files_with_openai(files, session_folder, api_key):
                     'original_filename': filename,
                     'new_filename': new_filename,
                     'extracted_text': extracted_text,
-                    'success': True
+                    'success': True,
+                    'student_number': student_number,
+                    'student_name': student_name
                 })
                 
             except Exception as e:
@@ -206,6 +208,8 @@ def process_files_with_openai(files, session_folder, api_key):
             completed += 1
             progress_bar.progress(completed / total_files)
     
+    # Store results in session state
+    st.session_state.processing_results = processed_results
     return processed_results
 
 def extract_course_assignment_ids(assignment_url):
@@ -765,20 +769,25 @@ def main():
                             api_key
                         )
                         
-                        # Display results
+                        # Display results and store in session state
                         st.write("### Processing Results")
+                        success_count = 0
                         for result in results:
                             if result['success']:
+                                success_count += 1
                                 st.success(f"Processed {result['original_filename']} → {result['new_filename']}")
                                 with st.expander("Show extracted text"):
                                     st.text(result['extracted_text'])
                             else:
                                 st.error(f"Failed to process {result['original_filename']}: {result['error']}")
                         
-                        st.session_state.processing_complete = True
-                        st.session_state.processing_results = results
-                        st.session_state.current_step = 2
-                        st.rerun()
+                        if success_count > 0:
+                            st.session_state.processing_complete = True
+                            st.session_state.processing_results = results
+                            st.session_state.current_step = 2
+                            st.rerun()
+                        else:
+                            st.error("No files were successfully processed. Please try again.")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -848,7 +857,12 @@ def main():
             
             if st.button("Start Matching", type="primary"):
                 with st.spinner("Matching students..."):
-                    # Perform matching
+                    # Verify we have processing results
+                    if not st.session_state.processing_results:
+                        st.error("No processing results found. Please process files first.")
+                        return
+                    
+                    # Perform matching using stored results
                     matches, unmatched = match_students_with_canvas(
                         st.session_state.processing_results,
                         students,
