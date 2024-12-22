@@ -895,15 +895,16 @@ def main():
                     st.markdown('<div class="results-section">', unsafe_allow_html=True)
                     st.write("### Matching Results")
                     
-                    # Show matches first
+                    # Show matches first in a collapsible expander
                     if matches:
-                        st.write("#### Successful Matches")
-                        for match in matches:
-                            st.success(
-                                f"Matched {match['file_info']['original_filename']} → "
-                                f"{match['canvas_student_name']} (ID: {match['canvas_student_id']}) "
-                                f"[Score: {match['match_score']:.1f}%]"
-                            )
+                        with st.expander("View Successful Matches", expanded=False):
+                            st.write("#### Successful Matches")
+                            for match in matches:
+                                st.success(
+                                    f"Matched {match['file_info']['original_filename']} → "
+                                    f"{match['canvas_student_name']} (ID: {match['canvas_student_id']}) "
+                                    f"[Score: {match['match_score']:.1f}%]"
+                                )
                     
                     # Handle unmatched files
                     if unmatched:
@@ -973,11 +974,14 @@ def main():
                                                 })
                                                 unmatched.remove(file_info)
                                                 
-                                                # Update session state before rerun
+                                                # Update session state
                                                 st.session_state.matched_files = matches
                                                 st.session_state.matches = matches
+                                                
+                                                # If all files are matched, proceed to next step
                                                 if not unmatched:
                                                     st.session_state.matching_complete = True
+                                                    st.session_state.current_step = 3
                                                 
                                                 st.rerun()
                                             except Exception as e:
@@ -989,12 +993,14 @@ def main():
                             st.session_state.matched_files = matches
                             st.session_state.matches = matches
                             st.session_state.matching_complete = True
+                            st.session_state.current_step = 3
                             st.rerun()
                     else:
                         st.success("All files matched successfully!")
                         st.session_state.matched_files = matches
                         st.session_state.matches = matches
                         st.session_state.matching_complete = True
+                        st.session_state.current_step = 3
                         st.rerun()
                     
                     st.markdown('</div>', unsafe_allow_html=True)
