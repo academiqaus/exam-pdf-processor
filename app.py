@@ -928,12 +928,13 @@ def main():
                         ]
                         
                         # Create a form for manual matching
-                        with st.form(key='manual_matching_form'):
+                        manual_matching_form = st.form(key='manual_matching_form')
+                        with manual_matching_form:
                             st.write("Please match the following files:")
                             
-                            # Track matches made in this form
-                            form_matches = []
-                            remaining_unmatched = []
+                            # Store matches in session state
+                            if 'form_matches' not in st.session_state:
+                                st.session_state.form_matches = []
                             
                             # Display unmatched files in a grid
                             cols_per_row = 3
@@ -976,50 +977,59 @@ def main():
                                             )
                                             
                                             if selected:
-                                                form_matches.append((file_info, selected))
-                                            else:
-                                                remaining_unmatched.append(file_info)
+                                                # Store the match in session state
+                                                match_key = f"match_{filename}"
+                                                st.session_state[match_key] = (file_info, selected)
                             
                             # Submit button
-                            submit_button = st.form_submit_button("Apply Matches", type="primary")
+                            submitted = st.form_submit_button("Apply Matches", type="primary")
                             
-                            if submit_button:
-                                for file_info, selected_id in form_matches:
-                                    student = next(s for s in unmatched_students if str(s.id) == selected_id)
-                                    
-                                    # Rename file to use Canvas user ID
-                                    old_path = os.path.join(session_folder, file_info['new_filename'])
-                                    new_filename = f"{student.id}.pdf"
-                                    new_path = os.path.join(session_folder, new_filename)
-                                    
-                                    try:
-                                        os.rename(old_path, new_path)
-                                        file_info['new_filename'] = new_filename
-                                        matches.append({
-                                            'file_info': file_info,
-                                            'canvas_student_id': student.id,
-                                            'canvas_student_name': student.name,
-                                            'match_score': 100  # Manual match
-                                        })
-                                    except Exception as e:
-                                        st.error(f"Error renaming file: {str(e)}")
-                                        remaining_unmatched.append(file_info)
+                            if submitted:
+                                # Process all stored matches
+                                remaining_unmatched = st.session_state.current_unmatched.copy()
+                                matches_made = False
                                 
-                                # Update session state
-                                st.session_state.current_unmatched = remaining_unmatched
-                                st.session_state.matched_files = matches
-                                st.session_state.matches = matches
+                                for file_info in st.session_state.current_unmatched:
+                                    match_key = f"match_{file_info.get('new_filename')}"
+                                    if match_key in st.session_state:
+                                        file_info, selected_id = st.session_state[match_key]
+                                        student = next(s for s in unmatched_students if str(s.id) == selected_id)
+                                        
+                                        # Rename file to use Canvas user ID
+                                        old_path = os.path.join(session_folder, file_info['new_filename'])
+                                        new_filename = f"{student.id}.pdf"
+                                        new_path = os.path.join(session_folder, new_filename)
+                                        
+                                        try:
+                                            os.rename(old_path, new_path)
+                                            file_info['new_filename'] = new_filename
+                                            matches.append({
+                                                'file_info': file_info,
+                                                'canvas_student_id': student.id,
+                                                'canvas_student_name': student.name,
+                                                'match_score': 100  # Manual match
+                                            })
+                                            remaining_unmatched.remove(file_info)
+                                            matches_made = True
+                                        except Exception as e:
+                                            st.error(f"Error renaming file: {str(e)}")
                                 
-                                # If all files are matched, proceed to next step
-                                if not remaining_unmatched:
-                                    st.session_state.matching_complete = True
-                                    st.session_state.current_step = 3
-                                    st.rerun()
-                                else:
-                                    st.warning(f"{len(remaining_unmatched)} files still need to be matched")
-                                    st.rerun()
+                                if matches_made:
+                                    # Update session state
+                                    st.session_state.current_unmatched = remaining_unmatched
+                                    st.session_state.matched_files = matches
+                                    st.session_state.matches = matches
+                                    
+                                    # If all files are matched, proceed to next step
+                                    if not remaining_unmatched:
+                                        st.session_state.matching_complete = True
+                                        st.session_state.current_step = 3
+                                        st.rerun()
+                                    else:
+                                        st.warning(f"{len(remaining_unmatched)} files still need to be matched")
+                                        st.rerun()
                         
-                        # Show continue button only if all files are matched
+                        # Show continue button outside the form if all files are matched
                         if not st.session_state.current_unmatched:
                             st.success("All files have been matched!")
                             if st.button("Continue to Cover Page Removal", type="primary"):
