@@ -246,21 +246,19 @@ def match_students_with_canvas(processed_files, canvas_students, matching_mode='
     Returns matched and unmatched files.
     """
     matches = []
-    unmatched = []
+    unmatched = processed_files.copy()  # Start with all files as unmatched
     
     # Create a dictionary of Canvas students for easy lookup
     canvas_student_dict = {student.id: student.name for student in canvas_students}
     
     # Process each file
     for file_info in processed_files:
-        if not file_info['success']:
-            unmatched.append(file_info)
+        if not file_info.get('success', False):  # Changed from if not file_info['success']
             continue
             
         # Extract the student name and number from the filename
         filename_parts = file_info['new_filename'].split('_')
         if len(filename_parts) < 2:
-            unmatched.append(file_info)
             continue
         
         student_number = filename_parts[0]
@@ -308,10 +306,8 @@ def match_students_with_canvas(processed_files, canvas_students, matching_mode='
                     'canvas_student_name': canvas_name,
                     'match_score': highest_score
                 })
+                unmatched.remove(file_info)  # Remove from unmatched list
                 matched = True
-        
-        if not matched:
-            unmatched.append(file_info)
     
     return matches, unmatched
 
@@ -758,13 +754,18 @@ def main():
         if st.session_state.get('matching_complete', False):
             st.success("All files have been matched successfully!")
             st.markdown('<div style="text-align: center; margin-top: 2rem;">', unsafe_allow_html=True)
-            if st.button("Proceed to Cover Page Removal", type="primary", key="proceed_to_cover"):
+            if st.button("Continue to Cover Page Removal", type="primary", key="proceed_to_cover"):
                 st.session_state.current_step = 3
-                st.experimental_rerun()
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
             return
+
+        # Reset matching complete if starting new matching
+        if 'matching_started' not in st.session_state:
+            st.session_state.matching_complete = False
+            st.session_state.matching_started = True
         
-        # Canvas API Configuration with auto-update
+        # Canvas API Configuration
         assignment_url = st.text_input(
             "Paste Canvas Assignment URL",
             help="Example: https://canvas.parra.catholic.edu.au/courses/12345/assignments/67890"
@@ -997,15 +998,17 @@ def main():
                                         # Page navigation
                                         col1, col2, col3 = st.columns([1, 2, 1])
                                         with col1:
-                                            if st.button("◀", key=f"prev_{filename}"):
-                                                st.session_state[f"current_page_{filename}"] = (current_page - 1) % total_pages
-                                                st.experimental_rerun()
+                                            if st.button("◀", key=f"prev_{filename}", help="Previous page"):
+                                                new_page = (current_page - 1) if current_page > 0 else (total_pages - 1)
+                                                st.session_state[f"current_page_{filename}"] = new_page
+                                                st.rerun()
                                         with col2:
                                             st.markdown(f"<div style='text-align: center'>Page {current_page + 1}/{total_pages}</div>", unsafe_allow_html=True)
                                         with col3:
-                                            if st.button("▶", key=f"next_{filename}"):
-                                                st.session_state[f"current_page_{filename}"] = (current_page + 1) % total_pages
-                                                st.experimental_rerun()
+                                            if st.button("▶", key=f"next_{filename}", help="Next page"):
+                                                new_page = (current_page + 1) if current_page < total_pages - 1 else 0
+                                                st.session_state[f"current_page_{filename}"] = new_page
+                                                st.rerun()
                                     
                                     # Individual file download button
                                     with open(pdf_path, "rb") as file:
