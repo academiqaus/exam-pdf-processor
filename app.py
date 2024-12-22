@@ -900,8 +900,13 @@ def main():
                         with st.expander("View Successful Matches", expanded=False):
                             st.write("#### Successful Matches")
                             for match in matches:
+                                # Get the AI-processed name from the file info
+                                ai_processed_name = match['file_info'].get('student_name', '').replace('_', ' ')
+                                ai_processed_number = match['file_info'].get('student_number', '')
+                                ai_output = f"{ai_processed_number}_{ai_processed_name}"
+                                
                                 st.success(
-                                    f"Matched {match['file_info']['original_filename']} → "
+                                    f"Matched {ai_output} → "
                                     f"{match['canvas_student_name']} (ID: {match['canvas_student_id']}) "
                                     f"[Score: {match['match_score']:.1f}%]"
                                 )
@@ -910,6 +915,7 @@ def main():
                     if unmatched:
                         st.write("#### Manual Matching Required")
                         st.write(f"Found {len(unmatched)} unmatched files that need manual matching.")
+                        st.write("Please match all files and then click 'Continue' to proceed.")
                         
                         # Get list of unmatched students (excluding already matched ones)
                         matched_student_ids = {match['canvas_student_id'] for match in matches}
@@ -920,6 +926,8 @@ def main():
                         
                         # Display unmatched files in a grid
                         cols_per_row = 3
+                        manual_matches_made = False  # Track if any manual matches were made
+                        
                         for i in range(0, len(unmatched), cols_per_row):
                             cols = st.columns(cols_per_row)
                             for j, col in enumerate(cols):
@@ -938,7 +946,10 @@ def main():
                                         if preview_bytes:
                                             st.image(preview_bytes, use_column_width=True)
                                         
-                                        st.write(f"**{filename}**")
+                                        # Show AI-processed name instead of filename
+                                        ai_processed_name = file_info.get('student_name', '').replace('_', ' ')
+                                        ai_processed_number = file_info.get('student_number', '')
+                                        st.write(f"**AI Output: {ai_processed_number}_{ai_processed_name}**")
                                         
                                         # Student selection with searchable dropdown
                                         search_options = [
@@ -973,15 +984,11 @@ def main():
                                                     'match_score': 100  # Manual match
                                                 })
                                                 unmatched.remove(file_info)
+                                                manual_matches_made = True
                                                 
                                                 # Update session state
                                                 st.session_state.matched_files = matches
                                                 st.session_state.matches = matches
-                                                
-                                                # If all files are matched, proceed to next step
-                                                if not unmatched:
-                                                    st.session_state.matching_complete = True
-                                                    st.session_state.current_step = 3
                                                 
                                                 st.rerun()
                                             except Exception as e:
@@ -993,8 +1000,12 @@ def main():
                             st.session_state.matched_files = matches
                             st.session_state.matches = matches
                             st.session_state.matching_complete = True
-                            st.session_state.current_step = 3
-                            st.rerun()
+                            
+                            if st.button("Continue to Cover Page Removal", type="primary"):
+                                st.session_state.current_step = 3
+                                st.rerun()
+                        elif manual_matches_made:
+                            st.warning(f"Still {len(unmatched)} files need to be matched before proceeding.")
                     else:
                         st.success("All files matched successfully!")
                         st.session_state.matched_files = matches
