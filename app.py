@@ -18,7 +18,6 @@ from canvasapi import Canvas
 import difflib
 import atexit
 import zipfile
-from tenacity import retry, wait_exponential, stop_after_attempt
 
 # Configure logging
 logging.basicConfig(
@@ -34,7 +33,7 @@ logger = logging.getLogger(__name__)
 UPLOAD_FOLDER = '/tmp/uploads' if os.getenv('STREAMLIT_SERVER_HEADLESS') == 'true' else 'uploads'
 ALLOWED_EXTENSIONS = {'pdf'}
 DUPLICATE_FOLDER = os.path.join(UPLOAD_FOLDER, 'duplicate_splits')
-MODEL = "gpt-4o-mini"  # Updated to use the correct model
+MODEL = "gpt-4o"  # Updated model name
 
 # Global variable for OpenAI client
 client = None
@@ -101,7 +100,6 @@ def extract_top_third_as_png(pdf_path, zoom=2):
     return png_path
 
 # Process a single PDF with OpenAI
-@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3))
 def process_pdf_with_ai(pdf_path, max_retries=3):
     global client
     try:
@@ -118,31 +116,31 @@ def process_pdf_with_ai(pdf_path, max_retries=3):
             ]}
         ]
 
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=messages,
-                max_tokens=300,
-                temperature=0.0,
-            )
-            extracted_text = response.choices[0].message.content
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=MODEL,
+                    messages=messages,
+                    max_tokens=300,
+                    temperature=0.0,
+                )
+                extracted_text = response.choices[0].message.content
 
-            # Extract student info
-            student_number_match = re.search(r"NUMBER: (\d+)", extracted_text)
-            student_name_match = re.search(r"NAME: (.+)", extracted_text)
+                # Extract student info
+                student_number_match = re.search(r"NUMBER: (\d+)", extracted_text)
+                student_name_match = re.search(r"NAME: (.+)", extracted_text)
 
-            student_number = student_number_match.group(1) if student_number_match else "UnknownNumber"
-            student_name = student_name_match.group(1).strip() if student_name_match else "UnknownName"
-            sanitized_student_name = student_name.replace(" ", "_")
+                student_number = student_number_match.group(1) if student_number_match else "UnknownNumber"
+                student_name = student_name_match.group(1).strip() if student_name_match else "UnknownName"
+                sanitized_student_name = student_name.replace(" ", "_")
 
-            os.remove(png_path)  # Clean up PNG
-            return student_number, sanitized_student_name, extracted_text
+                os.remove(png_path)  # Clean up PNG
+                return student_number, sanitized_student_name, extracted_text
 
-        except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
-            if os.path.exists(png_path):
-                os.remove(png_path)
-            raise e
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise e
+                continue
 
     except Exception as e:
         if os.path.exists(png_path):
@@ -156,52 +154,57 @@ def process_files_with_openai(files, session_folder, api_key):
         client = OpenAI(api_key=api_key)
     
     processed_results = []
-    
-    # Process files sequentially instead of in parallel to avoid rate limits
-    progress_bar = st.progress(0)
-    total_files = len(files)
-    
-    for idx, filename in enumerate(files, 1):
-        try:
-            pdf_path = os.path.join(session_folder, filename)
-            student_number, student_name, extracted_text = process_pdf_with_ai(pdf_path)
-            new_filename = f"{student_number}_{student_name}.pdf"
-            
-            # Handle duplicates
-            old_path = os.path.join(session_folder, filename)
-            new_path = os.path.join(session_folder, new_filename)
-            duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
-            
-            count = 1
-            while os.path.exists(new_path) or os.path.exists(duplicate_path):
-                new_filename = f"{student_number}_{student_name}_{count}.pdf"
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_file = {
+            executor.submit(process_pdf_with_ai, 
+                          os.path.join(session_folder, filename)): filename 
+            for filename in files
+        }
+        
+        # Create a progress bar
+        progress_bar = st.progress(0)
+        total_files = len(files)
+        completed = 0
+        
+        for future in as_completed(future_to_file):
+            filename = future_to_file[future]
+            try:
+                student_number, student_name, extracted_text = future.result()
+                new_filename = f"{student_number}_{student_name}.pdf"
+                
+                # Handle duplicates
+                old_path = os.path.join(session_folder, filename)
                 new_path = os.path.join(session_folder, new_filename)
                 duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
-                count += 1
+                
+                count = 1
+                while os.path.exists(new_path) or os.path.exists(duplicate_path):
+                    new_filename = f"{student_number}_{student_name}_{count}.pdf"
+                    new_path = os.path.join(session_folder, new_filename)
+                    duplicate_path = os.path.join(DUPLICATE_FOLDER, new_filename)
+                    count += 1
 
-            # Rename and copy
-            os.rename(old_path, new_path)
-            shutil.copy2(new_path, duplicate_path)
+                # Rename and copy
+                os.rename(old_path, new_path)
+                shutil.copy2(new_path, duplicate_path)
+                
+                processed_results.append({
+                    'original_filename': filename,
+                    'new_filename': new_filename,
+                    'extracted_text': extracted_text,
+                    'success': True
+                })
+                
+            except Exception as e:
+                processed_results.append({
+                    'original_filename': filename,
+                    'error': str(e),
+                    'success': False
+                })
             
-            processed_results.append({
-                'original_filename': filename,
-                'new_filename': new_filename,
-                'extracted_text': extracted_text,
-                'success': True
-            })
-            
-            # Add a small delay between files
-            time.sleep(1)
-            
-        except Exception as e:
-            processed_results.append({
-                'original_filename': filename,
-                'error': str(e),
-                'success': False
-            })
-        
-        # Update progress
-        progress_bar.progress(idx / total_files)
+            # Update progress
+            completed += 1
+            progress_bar.progress(completed / total_files)
     
     return processed_results
 
@@ -662,12 +665,12 @@ def main():
     if 'upload_progress' not in st.session_state:
         st.session_state.upload_progress = 0
         st.session_state.upload_status = ""
-    
-    # Initialize more session state variables
     if 'matched_files' not in st.session_state:
         st.session_state.matched_files = None
     if 'matching_complete' not in st.session_state:
         st.session_state.matching_complete = False
+    if 'matches' not in st.session_state:
+        st.session_state.matches = None
 
     # Add session cleanup on browser close/refresh
     if st.session_state.get('cleanup_registered') != True:
@@ -772,11 +775,8 @@ def main():
             st.success("All files have been matched successfully!")
             st.markdown('<div style="text-align: center; margin-top: 2rem;">', unsafe_allow_html=True)
             if st.button("Proceed to Cover Page Removal", type="primary", key="proceed_to_cover"):
-                # Store the matched files in session state before transitioning
-                if 'matches' in st.session_state:
-                    st.session_state.matched_files = st.session_state.matches
                 st.session_state.current_step = 3
-                st.rerun()
+                st.experimental_rerun()
             st.markdown('</div>', unsafe_allow_html=True)
             return
         
@@ -844,33 +844,31 @@ def main():
                         # Process unmatched files...
                         if not any(f.get('success', False) for f in unmatched):
                             st.success("All files have been matched!")
-                            # Store results in session state
                             st.session_state.matched_files = matches
-                            st.session_state.matches = matches  # Store in both places
+                            st.session_state.matches = matches
                             st.session_state.matching_complete = True
-                            st.rerun()
+                            st.experimental_rerun()
                     else:
                         st.success("All files matched successfully!")
-                        # Store results in session state
                         st.session_state.matched_files = matches
-                        st.session_state.matches = matches  # Store in both places
+                        st.session_state.matches = matches
                         st.session_state.matching_complete = True
-                        st.rerun()
+                        st.experimental_rerun()
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
     # Step 3: Cover Page Removal
     elif st.session_state.current_step == 3:
         # Verify we have matched files
-        if not st.session_state.matched_files and not st.session_state.get('matches'):
+        if not st.session_state.get('matches') and not st.session_state.get('matched_files'):
             st.error("No matched files found. Please complete the matching step first.")
             if st.button("Return to Matching"):
                 st.session_state.current_step = 2
                 st.session_state.matching_complete = False
-                st.rerun()
+                st.experimental_rerun()
             return
 
-        # If matched_files is not set but matches exists, use matches
+        # Use matches if available, otherwise use matched_files
         if not st.session_state.matched_files and st.session_state.get('matches'):
             st.session_state.matched_files = st.session_state.matches
 
