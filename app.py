@@ -240,7 +240,7 @@ def get_course_students(canvas, course_id):
         st.error(f"Failed to retrieve students: {str(e)}")
         return []
 
-def match_students_with_canvas(processed_files, canvas_students, matching_mode='name_and_number'):
+def match_students_with_canvas(processed_files, canvas_students, session_folder, matching_mode='name_and_number'):
     """
     Matches processed files with Canvas students using string matching.
     Returns matched and unmatched files.
@@ -820,6 +820,7 @@ def main():
                     matches, unmatched = match_students_with_canvas(
                         st.session_state.processing_results,
                         students,
+                        session_folder,
                         matching_mode
                     )
                     
