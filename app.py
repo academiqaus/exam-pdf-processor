@@ -1010,6 +1010,8 @@ def main():
                                     st.session_state.matches = matches
                                     st.session_state.matching_complete = True
                                     st.session_state.current_step = 3
+                                    st.session_state.unmatched_pdfs = []  # Clear unmatched files
+                                    st.session_state.unmatched_students = {}  # Clear unmatched students
                                     st.rerun()
                                 else:
                                     st.warning("No matches were selected. Please select at least one match before continuing.")
@@ -1020,6 +1022,8 @@ def main():
                         st.session_state.matches = matches
                         st.session_state.matching_complete = True
                         st.session_state.current_step = 3
+                        st.session_state.unmatched_pdfs = []  # Clear unmatched files
+                        st.session_state.unmatched_students = {}  # Clear unmatched students
                         st.rerun()
                     
                     st.markdown('</div>', unsafe_allow_html=True)
@@ -1038,6 +1042,10 @@ def main():
         # Use matches if available, otherwise use matched_files
         if not st.session_state.matched_files and st.session_state.get('matches'):
             st.session_state.matched_files = st.session_state.matches
+
+        # Clear any remaining matching state
+        st.session_state.pop('unmatched_pdfs', None)
+        st.session_state.pop('unmatched_students', None)
 
         st.markdown('<div class="caption-container"><p class="caption">Remove Cover Pages<span class="wait-text">Select booklet size to remove cover pages...</span></p></div>', unsafe_allow_html=True)
         
