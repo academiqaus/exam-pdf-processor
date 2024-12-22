@@ -770,17 +770,6 @@ def main():
                 st.rerun()
             return
 
-        # If matching is already complete, go straight to the results
-        if st.session_state.matching_complete and st.session_state.matched_files:
-            matches = st.session_state.matched_files
-            st.success("All files matched successfully!")
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                if st.button("Continue to Cover Page Removal", key="continue_to_cover_direct"):
-                    st.session_state.current_step = 3
-                    st.rerun()
-            return
-        
         # Canvas API Configuration with auto-update
         assignment_url = st.text_input(
             "Paste Canvas Assignment URL",
@@ -845,24 +834,20 @@ def main():
                         # Process unmatched files...
                         if not any(f.get('success', False) for f in unmatched):
                             st.success("All files have been matched!")
-                            # Store results in session state
+                            # Store results and move to next step
                             st.session_state.matched_files = matches
                             st.session_state.matching_complete = True
-                            col1, col2, col3 = st.columns([1, 2, 1])
-                            with col2:
-                                if st.button("Continue to Cover Page Removal", key="continue_to_cover"):
-                                    st.session_state.current_step = 3
-                                    st.rerun()
+                            st.session_state.current_step = 3
+                            time.sleep(1)  # Give user time to see success message
+                            st.rerun()
                     else:
                         st.success("All files matched successfully!")
-                        # Store results in session state
+                        # Store results and move to next step
                         st.session_state.matched_files = matches
                         st.session_state.matching_complete = True
-                        col1, col2, col3 = st.columns([1, 2, 1])
-                        with col2:
-                            if st.button("Continue to Cover Page Removal", key="continue_to_cover_auto"):
-                                st.session_state.current_step = 3
-                                st.rerun()
+                        st.session_state.current_step = 3
+                        time.sleep(1)  # Give user time to see success message
+                        st.rerun()
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
