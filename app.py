@@ -1329,6 +1329,7 @@ def main():
                 processed_files = []
                 failed_files = []
 
+                # Process files based on booklet size
                 if booklet_size == 'no_removal':
                     # Simply copy files without removing cover pages
                     with st.spinner("Copying files..."):
@@ -1346,15 +1347,15 @@ def main():
                                     logger.error(f"Error copying {filename}: {str(e)}")
                                     failed_files.append((filename, str(e)))
                 else:
+                    # Convert booklet size to integer
                     try:
                         booklet_size = int(booklet_size)
                     except ValueError:
                         st.error("Invalid booklet size. Please enter a valid number.")
-                        logger.error("Invalid booklet size entered")
                         return
-                    
+
+                    # Process PDFs and remove cover pages
                     with st.spinner("Removing cover pages..."):
-                        # Process each PDF
                         for filename in os.listdir(session_folder):
                             if filename.endswith('.pdf'):
                                 try:
@@ -1362,7 +1363,7 @@ def main():
                                     input_path = os.path.join(session_folder, filename)
                                     output_path = os.path.join(preview_folder, filename)
                                     
-                                    # Verify PDF is readable before processing
+                                    # Verify PDF is readable
                                     try:
                                         with fitz.open(input_path) as test_doc:
                                             _ = len(test_doc)
@@ -1370,7 +1371,8 @@ def main():
                                         logger.error(f"Error reading PDF {filename}: {str(pdf_error)}")
                                         failed_files.append((filename, f"Corrupted or unreadable PDF: {str(pdf_error)}"))
                                         continue
-                                        
+
+                                    # Remove cover pages
                                     remove_cover_pages(input_path, output_path, booklet_size)
                                     processed_files.append(filename)
                                     processed_count += 1
@@ -1378,34 +1380,35 @@ def main():
                                 except Exception as e:
                                     logger.error(f"Error processing {filename}: {str(e)}")
                                     failed_files.append((filename, str(e)))
-                        
+
                         # Clear progress indicators
                         progress_text.empty()
                         progress_bar.empty()
-                        
-                        # Show results
+
+                        # Show results if any files were processed
                         if processed_files:
                             st.success(f"Successfully processed {len(processed_files)} files!")
                             
+                            # Show any errors that occurred
                             if failed_files:
                                 with st.expander("Show Processing Errors"):
                                     st.error("The following files could not be processed:")
                                     for failed_file, error in failed_files:
                                         st.write(f"- {failed_file}: {error}")
-                            
-                            # Store processed state and files
+
+                            # Update session state
                             st.session_state.files_processed = True
                             st.session_state.processed_pdfs = processed_files
                             st.session_state.preview_folder = preview_folder
-                            
-                            # Create a zip file of all processed PDFs
+
+                            # Create ZIP file of processed PDFs
                             zip_path = os.path.join(preview_folder, "processed_exams.zip")
                             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                                 for filename in processed_files:
                                     file_path = os.path.join(preview_folder, filename)
                                     zip_file.write(file_path, filename)
-                            
-                            # Add download button for zip file
+
+                            # Add download button for ZIP
                             with open(zip_path, "rb") as zip_file:
                                 st.download_button(
                                     label="📥 Download All Files (ZIP)",
@@ -1414,11 +1417,11 @@ def main():
                                     mime="application/zip",
                                     key="download_all_zip"
                                 )
-                            
+
                             # Show summary of removed pages
                             st.markdown("### Summary of Removed Pages")
-                            
-                            # Create a 3-column grid for students
+
+                            # Display results in a 3-column grid
                             cols_per_row = 3
                             for row_idx in range(0, len(processed_files), cols_per_row):
                                 cols = st.columns(cols_per_row)
@@ -1428,7 +1431,7 @@ def main():
                                         filename = processed_files[file_idx]
                                         with col:
                                             try:
-                                                # Get original PDF page count
+                                                # Get page counts
                                                 original_path = os.path.join(session_folder, filename)
                                                 processed_path = os.path.join(preview_folder, filename)
                                                 
@@ -1436,14 +1439,14 @@ def main():
                                                     original_pages = len(original_doc)
                                                 with fitz.open(processed_path) as processed_doc:
                                                     processed_pages = len(processed_doc)
-                                                
+
                                                 # Calculate removed pages
                                                 if booklet_size != 'no_removal':
                                                     removed_pages = get_cover_pages_to_remove(original_pages, int(booklet_size))
                                                 else:
                                                     removed_pages = []
-                                                
-                                                # Create student card with summary
+
+                                                # Show summary card
                                                 st.markdown(f"""
                                                     <div style='padding: 1rem; border: 2px solid #76309B; border-radius: 12px; margin-bottom: 1rem; background: white; box-shadow: 0 2px 8px rgba(118,48,155,0.1);'>
                                                         <h4 style='color: #76309B; margin: 0 0 0.5rem 0; font-family: Montserrat, sans-serif; font-size: 0.9rem;'>{filename}</h4>
@@ -1453,8 +1456,8 @@ def main():
                                                         </div>
                                                     </div>
                                                 """, unsafe_allow_html=True)
-                                                
-                                                # Add download button with unique key
+
+                                                # Add download button
                                                 with open(processed_path, "rb") as file:
                                                     st.download_button(
                                                         label="📥 Download",
@@ -1467,6 +1470,7 @@ def main():
                                             except Exception as e:
                                                 st.error(f"Error displaying preview for {filename}: {str(e)}")
                                                 logger.error(f"Error displaying preview for {filename}: {str(e)}")
+
                     except Exception as e:
                         st.error(f"An error occurred: {str(e)}")
                         logger.error(f"Error in cover page removal: {str(e)}")
