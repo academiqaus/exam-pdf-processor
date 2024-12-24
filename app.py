@@ -1454,14 +1454,5 @@ def main():
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
 
-        # Add this near the start of the cover page removal section to test preview generation
-        test_file = os.path.join(session_folder, processed_files[0])
-        test_preview, _ = get_pdf_preview(test_file, page_num=0)
-        if test_preview:
-            st.success("Preview generation is working")
-            st.image(test_preview, caption="Test preview")
-        else:
-            st.error("Preview generation failed")
-
 if __name__ == "__main__":
     main() 
