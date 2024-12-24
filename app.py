@@ -1174,9 +1174,9 @@ def main():
             if st.session_state.get('matches') is not None:
                 st.markdown("### Matching Results")
                 
-                # Show automatic matches
+                # Show automatic matches in collapsed expander
                 if st.session_state.matches:
-                    with st.expander("View Automatic Matches", expanded=False):
+                    with st.expander("View Automatic Matches", expanded=st.session_state.get('show_matches_expander', False)):
                         for match in st.session_state.matches:
                             # Get the AI-processed name from the file info
                             ai_processed_name = match['file_info'].get('student_name', '').replace('_', ' ')
@@ -1217,7 +1217,11 @@ def main():
                                 if 'student_number' in file_info:
                                     st.write(f"Detected Number: {file_info['student_number']}")
                                 
-                                student_options = {f"{s.id}": f"{s.name} (ID: {s.id})" for s in st.session_state.unmatched_students}
+                                # Get only unmatched students
+                                matched_ids = {match['canvas_student_id'] for match in st.session_state.matches} if st.session_state.matches else set()
+                                unmatched_students = [s for s in st.session_state.unmatched_students if s.id not in matched_ids]
+                                
+                                student_options = {f"{s.id}": f"{s.name} (ID: {s.id})" for s in unmatched_students}
                                 selected = st.selectbox(
                                     "Select student",
                                     options=[""] + list(student_options.keys()),
@@ -1261,25 +1265,21 @@ def main():
                                     if not manual_matches.get(f.get('new_filename') or f.get('original_filename'))
                                 ]
                                 st.success("Successfully matched selected students!")
-                                
-                                # Check if all files are matched before rerunning
-                                if not st.session_state.unmatched:
-                                    st.session_state.all_matched = True
                                 st.rerun()
+
+                # Show continue button if there are no more unmatched files
+                if not st.session_state.get('unmatched'):
+                    st.markdown("""
+                        <div style='margin: 2rem 0; padding: 1rem; border-radius: 8px; background: #f7f0fa; border: 2px solid #76309B;'>
+                            <p style='margin: 0 0 1rem 0; color: #76309B; font-weight: 600;'>All Files Successfully Matched!</p>
+                            <p style='margin: 0; font-size: 0.9rem;'>You can now proceed to remove cover pages from the matched files.</p>
+                        </div>
+                    """, unsafe_allow_html=True)
                     
-                    # Show continue button if all files are matched
-                    if not st.session_state.unmatched or st.session_state.get('all_matched', False):
-                        st.markdown("""
-                            <div style='margin: 2rem 0; padding: 1rem; border-radius: 8px; background: #f7f0fa; border: 2px solid #76309B;'>
-                                <p style='margin: 0 0 1rem 0; color: #76309B; font-weight: 600;'>All Files Successfully Matched!</p>
-                                <p style='margin: 0; font-size: 0.9rem;'>You can now proceed to remove cover pages from the matched files.</p>
-                            </div>
-                        """, unsafe_allow_html=True)
-                        
-                        if st.button("Continue to Cover Page Removal", type="primary", use_container_width=True):
-                            st.session_state.current_step = 3
-                            st.session_state.matched_files = st.session_state.matches
-                            st.rerun()
+                    if st.button("Continue to Cover Page Removal", type="primary", use_container_width=True):
+                        st.session_state.current_step = 3
+                        st.session_state.matched_files = st.session_state.matches
+                        st.rerun()
 
     # Step 3: Cover Page Removal
     elif st.session_state.current_step == 3:
@@ -1394,7 +1394,10 @@ def main():
                                         processed_pages = len(processed_doc)
                                     
                                     # Calculate removed pages
-                                    removed_pages = get_cover_pages_to_remove(original_pages, booklet_size)
+                                    if booklet_size != 'no_removal':
+                                        removed_pages = get_cover_pages_to_remove(original_pages, int(booklet_size))
+                                    else:
+                                        removed_pages = []
                                     
                                     # Create student card with summary
                                     st.markdown(f"""
@@ -1402,39 +1405,41 @@ def main():
                                             <h4 style='color: #76309B; margin: 0 0 0.5rem 0; font-family: Montserrat, sans-serif; font-size: 0.9rem;'>{filename}</h4>
                                             <div style='background: #f7f0fa; padding: 0.5rem; border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.8rem;'>
                                                 <p style='margin: 0.25rem 0;'><strong>Pages:</strong> {original_pages} → {processed_pages}</p>
-                                                <p style='margin: 0.25rem 0;'><strong>Removed:</strong> {', '.join(str(p + 1) for p in removed_pages)}</p>
+                                                {f'<p style="margin: 0.25rem 0;"><strong>Removed:</strong> {", ".join(str(p + 1) for p in removed_pages)}</p>' if removed_pages else '<p style="margin: 0.25rem 0;"><strong>No pages removed</strong></p>'}
                                             </div>
                                             <div style='background: #f7f0fa; padding: 0.5rem; border-radius: 8px; margin: 0.5rem 0;'>
                                                 <p style='text-align: center; margin: 0; color: #76309B; font-size: 0.8rem;'>
-                                                    Removed Pages Preview
+                                                    {f'Removed Pages Preview' if removed_pages else 'No pages removed'}
                                                 </p>
                                             </div>
                                         </div>
                                     """, unsafe_allow_html=True)
                                     
-                                    # Process removed pages in pairs using Streamlit columns
-                                    sorted_pages = sorted(removed_pages)
-                                    for i in range(0, len(sorted_pages), 2):
-                                        preview_cols = st.columns(2)
-                                        for j, col in enumerate(preview_cols):
-                                            if i + j < len(sorted_pages):
-                                                page_num = sorted_pages[i + j]
-                                                preview_bytes, _ = get_pdf_preview(
-                                                    original_path, 
-                                                    page_num=page_num,
-                                                    top_third_only=False,
-                                                    zoom=3
-                                                )
-                                                if preview_bytes:
-                                                    with col:
-                                                        st.markdown(f"""
-                                                            <div style='border: 1px solid #76309B; border-radius: 4px; padding: 0.25rem; background: white;'>
-                                                                <p style='text-align: center; color: #76309B; margin: 0 0 0.25rem 0; font-size: 0.7rem;'>
-                                                                    Page {page_num + 1}
-                                                                </p>
-                                                            </div>
-                                                        """, unsafe_allow_html=True)
-                                                        st.image(preview_bytes, use_column_width=True)
+                                    # Only show removed pages preview if there are any
+                                    if removed_pages:
+                                        # Process removed pages in pairs using Streamlit columns
+                                        sorted_pages = sorted(removed_pages)
+                                        for i in range(0, len(sorted_pages), 2):
+                                            preview_cols = st.columns(2)
+                                            for j, col in enumerate(preview_cols):
+                                                if i + j < len(sorted_pages):
+                                                    page_num = sorted_pages[i + j]
+                                                    preview_bytes, _ = get_pdf_preview(
+                                                        original_path, 
+                                                        page_num=page_num,
+                                                        top_third_only=False,
+                                                        zoom=3
+                                                    )
+                                                    if preview_bytes:
+                                                        with col:
+                                                            st.markdown(f"""
+                                                                <div style='border: 1px solid #76309B; border-radius: 4px; padding: 0.25rem; background: white;'>
+                                                                    <p style='text-align: center; color: #76309B; margin: 0 0 0.25rem 0; font-size: 0.7rem;'>
+                                                                        Page {page_num + 1}
+                                                                    </p>
+                                                                </div>
+                                                            """, unsafe_allow_html=True)
+                                                            st.image(preview_bytes, use_column_width=True)
                                     
                                     st.markdown("""
                                         <div style='margin-top: 0.5rem;'>
