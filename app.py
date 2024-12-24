@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 UPLOAD_FOLDER = '/tmp/uploads' if os.getenv('STREAMLIT_SERVER_HEADLESS') == 'true' else 'uploads'
 ALLOWED_EXTENSIONS = {'pdf'}
 DUPLICATE_FOLDER = os.path.join(UPLOAD_FOLDER, 'duplicate_splits')
-MODEL = "gpt-4o"  # Updated model name
+MODEL = "gpt-4o-mini"  # Updated model name
 
 # Global variable for OpenAI client
 client = None
@@ -762,6 +762,8 @@ def handle_manual_matches():
     return False
 
 def main():
+    global client
+    
     st.set_page_config(
         page_title="Digital Marking App",
         layout="wide",
@@ -816,65 +818,280 @@ def main():
         st.markdown('''
             <div class="caption-container">
                 <p class="caption">
-                    Upload Split Student PDF Files
-                    <span class="wait-text">Please wait for the "Process Files" button to appear...</span>
+                    Upload Student PDF Files
+                    <span class="wait-text">Please select your upload method below...</span>
                 </p>
             </div>
         ''', unsafe_allow_html=True)
 
-        # File upload section
-        st.markdown('<div class="upload-area">', unsafe_allow_html=True)
-        uploaded_files = st.file_uploader(
-            "Select PDFs",
-            type=['pdf'],
-            accept_multiple_files=True,
-            help="Choose one or more PDF files to process"
+        # Upload method selection
+        upload_method = st.radio(
+            "Choose your upload method:",
+            options=['split_pdfs', 'merged_pdf'],
+            format_func=lambda x: "Upload pre-split PDFs" if x == 'split_pdfs' else "Upload merged PDF for splitting",
+            horizontal=True,
+            help="Choose whether to upload already split PDFs or a merged PDF that needs to be split"
         )
 
-        if uploaded_files:
-            # Create a unique folder for this session's uploads
+        if upload_method == 'split_pdfs':
+            # File upload section for pre-split PDFs
+            st.markdown('<div class="upload-area">', unsafe_allow_html=True)
+            uploaded_files = st.file_uploader(
+                "Select pre-split PDFs",
+                type=['pdf'],
+                accept_multiple_files=True,
+                help="Choose one or more pre-split PDF files to process"
+            )
+
+            if uploaded_files:
+                # Create a unique folder for this session's uploads
+                session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
+                os.makedirs(session_folder, exist_ok=True)
+
+                # Process each uploaded file
+                all_files_saved = True
+                for uploaded_file in uploaded_files:
+                    if allowed_file(uploaded_file.name):
+                        filename = secure_filename(uploaded_file.name)
+                        save_path = os.path.join(session_folder, filename)
+                        
+                        if save_uploaded_file(uploaded_file, save_path):
+                            if filename not in st.session_state.processed_files:
+                                st.session_state.processed_files.append(filename)
+                        else:
+                            st.error(f"Failed to save {filename}")
+                            all_files_saved = False
+                    else:
+                        st.error(f"Invalid file type: {uploaded_file.name}")
+                        all_files_saved = False
+
+                if all_files_saved and len(st.session_state.processed_files) > 0:
+                    if st.button("Process Files", type="primary"):
+                        with st.spinner("Processing with AcademIQ..."):
+                            try:
+                                api_key = st.secrets["OPENAI_API_KEY"]
+                                client = OpenAI(api_key=api_key)
+                                
+                                session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
+                                results = process_files_with_openai(
+                                    st.session_state.processed_files,
+                                    session_folder,
+                                    api_key
+                                )
+                                
+                                success_count = 0
+                                for result in results:
+                                    if result['success']:
+                                        success_count += 1
+                                        st.success(f"Processed {result['original_filename']} → {result['new_filename']}")
+                                        with st.expander("Show extracted text"):
+                                            st.text(result['extracted_text'])
+                                    else:
+                                        st.error(f"Failed to process {result['original_filename']}: {result['error']}")
+                                
+                                if success_count > 0:
+                                    st.session_state.processing_complete = True
+                                    st.session_state.processing_results = results
+                                    st.session_state.current_step = 2
+                                    st.rerun()
+                                else:
+                                    st.error("No files were successfully processed. Please try again.")
+                            except Exception as e:
+                                st.error(f"An error occurred during processing: {str(e)}")
+
+        else:  # upload_method == 'merged_pdf'
+            # Create session folder at the start
             session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
             os.makedirs(session_folder, exist_ok=True)
 
-            # Process each uploaded file
-            all_files_saved = True  # Track if all files are saved successfully
-            for uploaded_file in uploaded_files:
-                if allowed_file(uploaded_file.name):
-                    # Secure the filename
-                    filename = secure_filename(uploaded_file.name)
-                    save_path = os.path.join(session_folder, filename)
-                    
-                    # Save the file
-                    if save_uploaded_file(uploaded_file, save_path):
-                        if filename not in st.session_state.processed_files:
-                            st.session_state.processed_files.append(filename)
-                    else:
-                        st.error(f"Failed to save {filename}")
-                        all_files_saved = False
-                else:
-                    st.error(f"Invalid file type: {uploaded_file.name}")
-                    all_files_saved = False
+            # Form for merged PDF upload and splitting parameters
+            with st.form("pdf_split_form"):
+                uploaded_file = st.file_uploader(
+                    "Upload merged PDF",
+                    type=['pdf'],
+                    help="Choose the merged PDF file containing all student exams"
+                )
 
-            # Only show the Process Files button if all files are saved successfully
-            if all_files_saved and len(st.session_state.processed_files) > 0:
-                # Process button
-                if st.button("Process Files", type="primary"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("""
+                        <div style='font-size: 1.1rem; font-weight: 600; color: #76309B; margin-bottom: 0.5rem;'>
+                            Regular Exam Details
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    total_students = st.number_input(
+                        "Total number of students who sat the exam (including those who used extra writing space, if valid)",
+                        min_value=1,
+                        value=1,
+                        help="Enter the total number of students who completed the exam (including those who needed extra writing space)",
+                        key="total_students_field",
+                    )
+                    st.markdown("""
+                        <style>
+                            [data-testid="stNumberInput"] label {
+                                font-size: 1.1rem !important;
+                                font-weight: 500 !important;
+                                color: #333 !important;
+                            }
+                        </style>
+                    """, unsafe_allow_html=True)
+                    
+                    regular_pages = st.number_input(
+                        "Total pages per regular exam (without extra writing space)",
+                        min_value=1,
+                        value=1,
+                        help="Enter the total number of pages in a regular exam before any extra writing space",
+                        key="regular_pages_field"
+                    )
+
+                with col2:
+                    st.markdown("""
+                        <div style='font-size: 1.1rem; font-weight: 600; color: #76309B; margin-bottom: 0.5rem;'>
+                            Extra Writing Space Details (Optional)
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    students_with_extra = st.number_input(
+                        "Number of students who used extra writing space",
+                        min_value=0,
+                        value=0,
+                        help="Enter the number of students who needed additional pages for extra writing space (if any)",
+                        key="extra_students_field"
+                    )
+                    
+                    total_pages_with_extra = st.number_input(
+                        "Total pages per exam including extra writing space",
+                        min_value=0,  # Changed to allow 0 since it's optional
+                        value=0,  # Default to 0
+                        help="Enter the total number of pages used by students who needed extra writing space (optional)",
+                        key="total_pages_field"
+                    )
+
+                    # Show the expected page count calculation
+                    regular_student_pages = total_students * regular_pages  # Calculate for ALL students
+                    extra_student_pages = 0  # Initialize to 0
+                    
+                    if students_with_extra > 0 and total_pages_with_extra > 0:
+                        regular_student_pages = (total_students - students_with_extra) * regular_pages
+                        extra_student_pages = students_with_extra * total_pages_with_extra
+                    
+                    expected_total = regular_student_pages + extra_student_pages
+                    
+                    st.markdown(f"""
+                        <div style='background: #f7f0fa; padding: 1rem; border-radius: 8px; margin-top: 1rem;'>
+                            <div style='font-size: 1rem; color: #76309B; margin-bottom: 0.5rem;'>Expected Page Count:</div>
+                            <ul style='margin: 0; padding-left: 1.2rem;'>
+                                <li>Regular exams: {total_students} students × {regular_pages} pages = {regular_student_pages} pages</li>
+                                {f'<li>Extra writing space: {students_with_extra} students × {total_pages_with_extra} pages = {extra_student_pages} pages</li>' if students_with_extra > 0 and total_pages_with_extra > 0 else '<!-- No extra writing space -->'}
+                                <li><strong>Total expected: {expected_total} pages</strong></li>
+                            </ul>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                if st.form_submit_button("Split PDF", type="primary", disabled=st.session_state.get('split_complete', False)):
+                    if uploaded_file is None:
+                        st.error("Please upload a PDF file")
+                        return
+
+                    try:
+                        # Save the uploaded file
+                        merged_path = os.path.join(session_folder, "merged.pdf")
+                        with open(merged_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+
+                        # Calculate expected total pages
+                        regular_student_pages = (total_students - students_with_extra) * regular_pages
+                        extra_student_pages = students_with_extra * total_pages_with_extra
+                        expected_total = regular_student_pages + extra_student_pages
+
+                        # Verify page count
+                        pdf = PyPDF2.PdfReader(merged_path)
+                        actual_pages = len(pdf.pages)
+
+                        if actual_pages != expected_total:
+                            st.error(f"Page count mismatch! Expected {expected_total} pages but found {actual_pages} pages.")
+                            st.markdown(f"""
+                                <div style='background: #ffe6e6; padding: 1rem; border-radius: 8px; margin-top: 1rem;'>
+                                    <div style='font-size: 1rem; color: #d32f2f;'>Page Count Details:</div>
+                                    <ul style='margin: 0; padding-left: 1.2rem;'>
+                                        <li>Expected: {expected_total} pages</li>
+                                        <li>Found: {actual_pages} pages</li>
+                                        <li>Please check your input values and ensure they match the PDF content.</li>
+                                    </ul>
+                                </div>
+                            """, unsafe_allow_html=True)
+                            return
+
+                        # Split the PDF
+                        with st.spinner("Splitting PDF..."):
+                            current_page = 0
+                            processed_files = []
+
+                            # First process regular students (without extra writing space)
+                            for i in range(total_students - students_with_extra):
+                                output_path = os.path.join(session_folder, f"Student_{i+1}.pdf")
+                                writer = PyPDF2.PdfWriter()
+                                for _ in range(regular_pages):
+                                    writer.add_page(pdf.pages[current_page])
+                                    current_page += 1
+                                with open(output_path, "wb") as output_file:
+                                    writer.write(output_file)
+                                processed_files.append(f"Student_{i+1}.pdf")
+
+                            # Then process students with extra writing space at the end
+                            for i in range(students_with_extra):
+                                output_path = os.path.join(session_folder, f"Student_{total_students-students_with_extra+i+1}_Extra.pdf")
+                                writer = PyPDF2.PdfWriter()
+                                for _ in range(total_pages_with_extra):
+                                    writer.add_page(pdf.pages[current_page])
+                                    current_page += 1
+                                with open(output_path, "wb") as output_file:
+                                    writer.write(output_file)
+                                processed_files.append(f"Student_{total_students-students_with_extra+i+1}_Extra.pdf")
+
+                            # Clean up the merged PDF
+                            pdf.stream.close()  # Close the PDF reader
+                            os.remove(merged_path)  # Delete the merged PDF
+                            
+                            st.session_state.processed_files = processed_files
+                            st.session_state.session_folder = session_folder  # Store folder path in session state
+                            st.session_state.split_complete = True  # Mark split as complete
+                            st.success(f"""
+                                ✅ Successfully split PDF into {len(processed_files)} files!
+                                
+                                **Next Steps:**
+                                1. Click the "Process Split Files" button below to continue
+                                2. This will analyze each file to extract student information
+                            """)
+                            st.session_state.show_process_button = True
+                            st.rerun()
+
+                    except Exception as e:
+                        st.error(f"Error processing PDF: {str(e)}")
+                        st.session_state.split_complete = False
+
+            # Show process button outside the form after successful split
+            if st.session_state.get('show_process_button', False):
+                st.markdown("""
+                    <div style='margin: 2rem 0; padding: 1rem; border-radius: 8px; background: #f7f0fa; border: 2px solid #76309B;'>
+                        <p style='margin: 0 0 1rem 0; color: #76309B; font-weight: 600;'>PDF Split Complete!</p>
+                        <p style='margin: 0; font-size: 0.9rem;'>Click the button below to process the split files and extract student information.</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button("Process Split Files", type="primary"):
                     with st.spinner("Processing with AcademIQ..."):
                         try:
-                            # Use environment variable for API key
                             api_key = st.secrets["OPENAI_API_KEY"]
-                            global client
                             client = OpenAI(api_key=api_key)
                             
-                            session_folder = os.path.join(UPLOAD_FOLDER, 'splits', st.session_state.timestamp)
                             results = process_files_with_openai(
                                 st.session_state.processed_files,
-                                session_folder,
+                                st.session_state.session_folder,  # Use folder path from session state
                                 api_key
                             )
                             
-                            # Display results and store in session state
-                            st.write("### Processing Results")
                             success_count = 0
                             for result in results:
                                 if result['success']:
@@ -895,7 +1112,7 @@ def main():
                         except Exception as e:
                             st.error(f"An error occurred during processing: {str(e)}")
 
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
     # Step 2: Canvas Student Matching
     elif st.session_state.current_step == 2:
