@@ -1378,11 +1378,12 @@ def main():
                     
                     # Create a 3-column grid for students
                     cols_per_row = 3
-                    for i in range(0, len(processed_files), cols_per_row):
+                    for row_idx in range(0, len(processed_files), cols_per_row):
                         cols = st.columns(cols_per_row)
-                        for j, col in enumerate(cols):
-                            if i + j < len(processed_files):
-                                filename = processed_files[i + j]
+                        for col_idx, col in enumerate(cols):
+                            file_idx = row_idx + col_idx
+                            if file_idx < len(processed_files):
+                                filename = processed_files[file_idx]
                                 with col:
                                     # Get original PDF page count
                                     original_path = os.path.join(session_folder, filename)
@@ -1419,11 +1420,11 @@ def main():
                                     if removed_pages:
                                         # Process removed pages in pairs using Streamlit columns
                                         sorted_pages = sorted(removed_pages)
-                                        for i in range(0, len(sorted_pages), 2):
+                                        for preview_row in range(0, len(sorted_pages), 2):
                                             preview_cols = st.columns(2)
-                                            for j, col in enumerate(preview_cols):
-                                                if i + j < len(sorted_pages):
-                                                    page_num = sorted_pages[i + j]
+                                            for preview_col_idx, preview_col in enumerate(preview_cols):
+                                                if preview_row + preview_col_idx < len(sorted_pages):
+                                                    page_num = sorted_pages[preview_row + preview_col_idx]
                                                     preview_bytes, _ = get_pdf_preview(
                                                         original_path, 
                                                         page_num=page_num,
@@ -1431,7 +1432,7 @@ def main():
                                                         zoom=3
                                                     )
                                                     if preview_bytes:
-                                                        with col:
+                                                        with preview_col:
                                                             st.markdown(f"""
                                                                 <div style='border: 1px solid #76309B; border-radius: 4px; padding: 0.25rem; background: white;'>
                                                                     <p style='text-align: center; color: #76309B; margin: 0 0 0.25rem 0; font-size: 0.7rem;'>
@@ -1445,18 +1446,23 @@ def main():
                                         <div style='margin-top: 0.5rem;'>
                                     """, unsafe_allow_html=True)
                                     
-                                    # Add download button
+                                    # Add download button with unique key
                                     with open(processed_path, "rb") as file:
                                         st.download_button(
                                             label="📥 Download",
                                             data=file,
                                             file_name=filename,
                                             mime="application/pdf",
-                                            key=f"download_{filename}",
+                                            key=f"download_{file_idx}_{filename}",  # Make key unique with row and column index
                                             use_container_width=True
                                         )
                                     
                                     st.markdown("</div>", unsafe_allow_html=True)
+                                    
+                                    # Force a rerun to show the next file's preview
+                                    if file_idx < len(processed_files) - 1:
+                                        time.sleep(0.1)  # Small delay to prevent too rapid updates
+                                        st.rerun()
 
             except ValueError:
                 st.error("Invalid booklet size. Please enter a valid number.")
