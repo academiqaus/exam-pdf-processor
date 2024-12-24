@@ -1189,34 +1189,34 @@ def main():
                     st.write("### Manual Matching")
                     st.write(f"{len(st.session_state.unmatched)} files need manual matching")
                     
-                    manual_matches = {}
-                    
-                    for file_info in st.session_state.unmatched:
-                        st.write("---")  # Separator between files
+                    with st.form("manual_matching_form"):
+                        manual_matches = {}
                         
-                        # Show PDF preview and matching controls side by side
-                        col1, col2 = st.columns([1, 1.5])
-                        
-                        with col1:
-                            # Get the filename, handling both new and original filenames
-                            filename = file_info.get('new_filename') or file_info.get('original_filename')
-                            if not filename:
-                                st.error("Missing filename in file info")
-                                continue
-                                
-                            pdf_path = os.path.join(session_folder, filename)
-                            preview_bytes, _ = get_pdf_preview(pdf_path, page_num=0, top_third_only=True, zoom=2)
-                            if preview_bytes:
-                                st.image(preview_bytes, use_column_width=True)
-                        
-                        with col2:
-                            st.write(f"**{filename}**")
-                            if 'student_name' in file_info:
-                                st.write(f"Detected Name: {file_info['student_name'].replace('_', ' ')}")
-                            if 'student_number' in file_info:
-                                st.write(f"Detected Number: {file_info['student_number']}")
+                        for file_info in st.session_state.unmatched:
+                            st.write("---")  # Separator between files
                             
-                            with st.form(key=f"match_form_{filename}"):
+                            # Show PDF preview and matching controls side by side
+                            col1, col2 = st.columns([1, 1.5])
+                            
+                            with col1:
+                                # Get the filename, handling both new and original filenames
+                                filename = file_info.get('new_filename') or file_info.get('original_filename')
+                                if not filename:
+                                    st.error("Missing filename in file info")
+                                    continue
+                                    
+                                pdf_path = os.path.join(session_folder, filename)
+                                preview_bytes, _ = get_pdf_preview(pdf_path, page_num=0, top_third_only=True, zoom=2)
+                                if preview_bytes:
+                                    st.image(preview_bytes, use_column_width=True)
+                            
+                            with col2:
+                                st.write(f"**{filename}**")
+                                if 'student_name' in file_info:
+                                    st.write(f"Detected Name: {file_info['student_name'].replace('_', ' ')}")
+                                if 'student_number' in file_info:
+                                    st.write(f"Detected Number: {file_info['student_number']}")
+                                
                                 student_options = {f"{s.id}": f"{s.name} (ID: {s.id})" for s in st.session_state.unmatched_students}
                                 selected = st.selectbox(
                                     "Select student",
@@ -1224,37 +1224,46 @@ def main():
                                     format_func=lambda x: "Select student..." if x == "" else student_options.get(x, x),
                                     key=f"match_{filename}"
                                 )
-                                
-                                if st.form_submit_button("Match Student"):
-                                    if selected:
-                                        student = next(s for s in st.session_state.unmatched_students if str(s.id) == selected)
+                                manual_matches[filename] = selected
+                        
+                        # Single submit button for all matches
+                        if st.form_submit_button("Match All Students"):
+                            matches_made = False
+                            for filename, selected_id in manual_matches.items():
+                                if selected_id:  # Only process if a student was selected
+                                    try:
+                                        student = next(s for s in st.session_state.unmatched_students if str(s.id) == selected_id)
+                                        file_info = next(f for f in st.session_state.unmatched if 
+                                                       (f.get('new_filename') or f.get('original_filename')) == filename)
                                         
                                         # Rename file to just Canvas ID
                                         old_path = os.path.join(session_folder, filename)
                                         new_filename = f"{student.id}.pdf"  # Simplified filename
                                         new_path = os.path.join(session_folder, new_filename)
                                         
-                                        try:
-                                            os.rename(old_path, new_path)
-                                            if 'matches' not in st.session_state:
-                                                st.session_state.matches = []
-                                            st.session_state.matches.append({
-                                                'file_info': file_info,
-                                                'canvas_student_id': student.id,
-                                                'canvas_student_name': student.name,
-                                                'match_score': 100
-                                            })
-                                            st.success(f"Successfully matched to {student.name}")
-                                            # Remove from unmatched list
-                                            st.session_state.unmatched = [
-                                                f for f in st.session_state.unmatched 
-                                                if (f.get('new_filename') or f.get('original_filename')) != filename
-                                            ]
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Error matching {filename}: {str(e)}")
+                                        os.rename(old_path, new_path)
+                                        if 'matches' not in st.session_state:
+                                            st.session_state.matches = []
+                                        st.session_state.matches.append({
+                                            'file_info': file_info,
+                                            'canvas_student_id': student.id,
+                                            'canvas_student_name': student.name,
+                                            'match_score': 100
+                                        })
+                                        matches_made = True
+                                    except Exception as e:
+                                        st.error(f"Error matching {filename}: {str(e)}")
+                            
+                            if matches_made:
+                                # Update unmatched list
+                                st.session_state.unmatched = [
+                                    f for f in st.session_state.unmatched 
+                                    if not manual_matches.get(f.get('new_filename') or f.get('original_filename'))
+                                ]
+                                st.success("Successfully matched selected students!")
+                                st.rerun()
                     
-                    # Add continue button outside all forms
+                    # Add continue button outside the form
                     if st.button("Continue to Cover Page Removal", type="primary"):
                         st.session_state.current_step = 3
                         st.session_state.matched_files = st.session_state.matches
