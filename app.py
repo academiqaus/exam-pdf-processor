@@ -1261,10 +1261,14 @@ def main():
                                     if not manual_matches.get(f.get('new_filename') or f.get('original_filename'))
                                 ]
                                 st.success("Successfully matched selected students!")
+                                
+                                # Check if all files are matched before rerunning
+                                if not st.session_state.unmatched:
+                                    st.session_state.all_matched = True
                                 st.rerun()
                     
-                    # Show continue button outside the form if all files are matched
-                    if not st.session_state.unmatched:  # Only show if there are no more unmatched files
+                    # Show continue button if all files are matched
+                    if not st.session_state.unmatched or st.session_state.get('all_matched', False):
                         st.markdown("""
                             <div style='margin: 2rem 0; padding: 1rem; border-radius: 8px; background: #f7f0fa; border: 2px solid #76309B;'>
                                 <p style='margin: 0 0 1rem 0; color: #76309B; font-weight: 600;'>All Files Successfully Matched!</p>
