@@ -1470,7 +1470,6 @@ def main():
                                             except Exception as e:
                                                 st.error(f"Error displaying preview for {filename}: {str(e)}")
                                                 logger.error(f"Error displaying preview for {filename}: {str(e)}")
-
                     except Exception as e:
                         st.error(f"An error occurred: {str(e)}")
                         logger.error(f"Error in cover page removal: {str(e)}")
