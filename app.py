@@ -1462,7 +1462,6 @@ def main():
                                             except Exception as e:
                                                 st.error(f"Error displaying preview for {filename}: {str(e)}")
                                                 logger.error(f"Error displaying preview for {filename}: {str(e)}")
-
                     except ValueError:
                         st.error("Invalid booklet size. Please enter a valid number.")
                     except Exception as e:
