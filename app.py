@@ -1263,11 +1263,19 @@ def main():
                                 st.success("Successfully matched selected students!")
                                 st.rerun()
                     
-                    # Add continue button outside the form
-                    if st.button("Continue to Cover Page Removal", type="primary"):
-                        st.session_state.current_step = 3
-                        st.session_state.matched_files = st.session_state.matches
-                        st.rerun()
+                    # Show continue button outside the form if all files are matched
+                    if not st.session_state.unmatched:  # Only show if there are no more unmatched files
+                        st.markdown("""
+                            <div style='margin: 2rem 0; padding: 1rem; border-radius: 8px; background: #f7f0fa; border: 2px solid #76309B;'>
+                                <p style='margin: 0 0 1rem 0; color: #76309B; font-weight: 600;'>All Files Successfully Matched!</p>
+                                <p style='margin: 0; font-size: 0.9rem;'>You can now proceed to remove cover pages from the matched files.</p>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        if st.button("Continue to Cover Page Removal", type="primary", use_container_width=True):
+                            st.session_state.current_step = 3
+                            st.session_state.matched_files = st.session_state.matches
+                            st.rerun()
 
     # Step 3: Cover Page Removal
     elif st.session_state.current_step == 3:
