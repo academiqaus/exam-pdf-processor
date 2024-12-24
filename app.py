@@ -1389,85 +1389,79 @@ def main():
                                     original_path = os.path.join(session_folder, filename)
                                     processed_path = os.path.join(preview_folder, filename)
                                     
-                                    with fitz.open(original_path) as original_doc:
-                                        original_pages = len(original_doc)
-                                    with fitz.open(processed_path) as processed_doc:
-                                        processed_pages = len(processed_doc)
-                                    
-                                    # Calculate removed pages
-                                    if booklet_size != 'no_removal':
-                                        removed_pages = get_cover_pages_to_remove(original_pages, int(booklet_size))
-                                    else:
-                                        removed_pages = []
-                                    
-                                    # Create student card with summary
-                                    st.markdown(f"""
-                                        <div style='padding: 1rem; border: 2px solid #76309B; border-radius: 12px; margin-bottom: 1rem; background: white; box-shadow: 0 2px 8px rgba(118,48,155,0.1);'>
-                                            <h4 style='color: #76309B; margin: 0 0 0.5rem 0; font-family: Montserrat, sans-serif; font-size: 0.9rem;'>{filename}</h4>
-                                            <div style='background: #f7f0fa; padding: 0.5rem; border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.8rem;'>
-                                                <p style='margin: 0.25rem 0;'><strong>Pages:</strong> {original_pages} → {processed_pages}</p>
-                                                {f'<p style="margin: 0.25rem 0;"><strong>Removed:</strong> {", ".join(str(p + 1) for p in removed_pages)}</p>' if removed_pages else '<p style="margin: 0.25rem 0;"><strong>No pages removed</strong></p>'}
+                                    try:
+                                        with fitz.open(original_path) as original_doc:
+                                            original_pages = len(original_doc)
+                                        with fitz.open(processed_path) as processed_doc:
+                                            processed_pages = len(processed_doc)
+                                        
+                                        # Calculate removed pages
+                                        if booklet_size != 'no_removal':
+                                            removed_pages = get_cover_pages_to_remove(original_pages, int(booklet_size))
+                                        else:
+                                            removed_pages = []
+                                        
+                                        # Create student card with summary
+                                        st.markdown(f"""
+                                            <div style='padding: 1rem; border: 2px solid #76309B; border-radius: 12px; margin-bottom: 1rem; background: white; box-shadow: 0 2px 8px rgba(118,48,155,0.1);'>
+                                                <h4 style='color: #76309B; margin: 0 0 0.5rem 0; font-family: Montserrat, sans-serif; font-size: 0.9rem;'>{filename}</h4>
+                                                <div style='background: #f7f0fa; padding: 0.5rem; border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.8rem;'>
+                                                    <p style='margin: 0.25rem 0;'><strong>Pages:</strong> {original_pages} → {processed_pages}</p>
+                                                    {f'<p style="margin: 0.25rem 0;"><strong>Removed:</strong> {", ".join(str(p + 1) for p in removed_pages)}</p>' if removed_pages else '<p style="margin: 0.25rem 0;"><strong>No pages removed</strong></p>'}
+                                                </div>
                                             </div>
-                                            <div style='background: #f7f0fa; padding: 0.5rem; border-radius: 8px; margin: 0.5rem 0;'>
-                                                <p style='text-align: center; margin: 0; color: #76309B; font-size: 0.8rem;'>
-                                                    {f'Removed Pages Preview' if removed_pages else 'No pages removed'}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    """, unsafe_allow_html=True)
-                                    
-                                    # Only show removed pages preview if there are any
-                                    if removed_pages:
-                                        # Process removed pages in pairs using Streamlit columns
-                                        sorted_pages = sorted(removed_pages)
-                                        for preview_row in range(0, len(sorted_pages), 2):
-                                            preview_cols = st.columns(2)
-                                            for preview_col_idx, preview_col in enumerate(preview_cols):
-                                                if preview_row + preview_col_idx < len(sorted_pages):
-                                                    page_num = sorted_pages[preview_row + preview_col_idx]
-                                                    preview_bytes, _ = get_pdf_preview(
-                                                        original_path, 
-                                                        page_num=page_num,
-                                                        top_third_only=False,
-                                                        zoom=3
-                                                    )
-                                                    if preview_bytes:
-                                                        with preview_col:
-                                                            st.markdown(f"""
-                                                                <div style='border: 1px solid #76309B; border-radius: 4px; padding: 0.25rem; background: white;'>
-                                                                    <p style='text-align: center; color: #76309B; margin: 0 0 0.25rem 0; font-size: 0.7rem;'>
-                                                                        Page {page_num + 1}
-                                                                    </p>
-                                                                </div>
-                                                            """, unsafe_allow_html=True)
-                                                            st.image(preview_bytes, use_column_width=True)
-                                    
-                                    st.markdown("""
-                                        <div style='margin-top: 0.5rem;'>
-                                    """, unsafe_allow_html=True)
-                                    
-                                    # Add download button with unique key
-                                    with open(processed_path, "rb") as file:
-                                        st.download_button(
-                                            label="📥 Download",
-                                            data=file,
-                                            file_name=filename,
-                                            mime="application/pdf",
-                                            key=f"download_{file_idx}_{filename}",  # Make key unique with row and column index
-                                            use_container_width=True
-                                        )
-                                    
-                                    st.markdown("</div>", unsafe_allow_html=True)
-                                    
-                                    # Force a rerun to show the next file's preview
-                                    if file_idx < len(processed_files) - 1:
-                                        time.sleep(0.1)  # Small delay to prevent too rapid updates
-                                        st.rerun()
+                                        """, unsafe_allow_html=True)
+                                        
+                                        # Only show removed pages preview if there are any
+                                        if removed_pages:
+                                            # Process removed pages in pairs using Streamlit columns
+                                            sorted_pages = sorted(removed_pages)
+                                            for preview_row in range(0, len(sorted_pages), 2):
+                                                preview_cols = st.columns(2)
+                                                for preview_col_idx, preview_col in enumerate(preview_cols):
+                                                    if preview_row + preview_col_idx < len(sorted_pages):
+                                                        page_num = sorted_pages[preview_row + preview_col_idx]
+                                                        preview_bytes, _ = get_pdf_preview(
+                                                            original_path, 
+                                                            page_num=page_num,
+                                                            top_third_only=False,
+                                                            zoom=2  # Reduced zoom for better performance
+                                                        )
+                                                        if preview_bytes:
+                                                            with preview_col:
+                                                                st.image(
+                                                                    preview_bytes,
+                                                                    caption=f"Page {page_num + 1}",
+                                                                    use_column_width=True
+                                                                )
+                                        
+                                        # Add download button
+                                        with open(processed_path, "rb") as file:
+                                            st.download_button(
+                                                label="📥 Download",
+                                                data=file,
+                                                file_name=filename,
+                                                mime="application/pdf",
+                                                key=f"download_{file_idx}_{filename}",
+                                                use_container_width=True
+                                            )
+                                    except Exception as e:
+                                        st.error(f"Error displaying preview for {filename}: {str(e)}")
+                                        logger.error(f"Preview error for {filename}: {str(e)}")
 
             except ValueError:
                 st.error("Invalid booklet size. Please enter a valid number.")
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
+
+        # Add this near the start of the cover page removal section to test preview generation
+        test_file = os.path.join(session_folder, processed_files[0])
+        test_preview, _ = get_pdf_preview(test_file, page_num=0)
+        if test_preview:
+            st.success("Preview generation is working")
+            st.image(test_preview, caption="Test preview")
+        else:
+            st.error("Preview generation failed")
 
 if __name__ == "__main__":
     main() 
